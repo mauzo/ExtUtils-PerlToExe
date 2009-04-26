@@ -17,28 +17,38 @@ sub Cqq {
     $_;
 }
 
-my $argc        = @ARGV + 1;
-my $argv_len    = $argc + 1;
-my $argv_buf    = join qq/\\0"\n"/, map Cqq, $0, @ARGV;
-my $argv_init   = "my_argv[0] = my_argv_buf;\n";
-my $ptr         = 1 + length $0;
+my @argv        = ($0, @ARGV, "--");
+my $argc        = @argv;
+my $argv_buf    = join qq/\\0"\n"/, map Cqq, @argv;
+my $argv_init   = "";
+my $ptr         = 0;
 
-for (1..@ARGV) {
+for (0..$#argv) {
     $argv_init .= "my_argv[$_] = my_argv_buf + $ptr;\n";
-    $ptr += 1 + length $ARGV[$_ - 1];
+    $ptr += 1 + length $argv[$_];
 }
 
 $ptr++;
 
 for ($C) {
     s{\*my_perl;\K}{
-        static int my_argc = $argc;
+        static int my_argc;
         static char my_argv_buf[$ptr] = "$argv_buf\\0";
-        static char *my_argv[$argv_len];
+    };
+    s{\sexitstatus;\K}{
+        char *my_argv[$argc + argc];
     };
     s{; \K ( [^;]* perl_parse\( [^)]* ,\s+) argc,\s+ argv,\s+}{
         $argv_init
-        my_argv[$argc] = (char *)NULL;
+
+        /* argv has an extra "\\0" on the end, so we can go all 
+           the way up to argv[argc] */
+
+        for (my_argc = 0; my_argc < argc; my_argc++) {
+            my_argv[my_argc + $argc] = argv[my_argc + 1];
+        }
+        my_argc += $argc - 1;
+
         $1 my_argc, my_argv,
     }x;
 }
