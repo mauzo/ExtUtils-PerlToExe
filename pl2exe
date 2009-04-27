@@ -3,6 +3,6 @@
 use warnings;
 use strict;
 
-use ExtUtils::PerlToExe qw/exemain/;
+use ExtUtils::PerlToExe qw/build_exe/;
 
-print exemain @ARGV;
+build_exe "a.out", @ARGV;

@@ -24,8 +24,14 @@ use strict;
 
 use Exporter::NoWork;
 
+use Config;
 use ExtUtils::Miniperl  ();
+use ExtUtils::Embed     ();
+
 use List::Util          qw/max/;
+use File::Temp          qw/tempdir/;
+use File::Slurp         qw/write_file/;
+use IPC::System::Simple qw/system/;
 
 =head2 perlmain
 
@@ -39,6 +45,7 @@ sub perlmain {
     ExtUtils::Miniperl::writemain;
     select $OLD;
     close $MAIN;
+
     return $C;
 }
 
@@ -130,6 +137,38 @@ sub exemain {
     }
 
     return $C;
+}
+
+=head1 build_exe NAME, LIST
+
+Compiles and links a version of perl that runs with the supplied
+arguments.
+
+=cut
+
+sub build_exe {
+    my ($exe, @argv) = @_;
+
+    my $tmp = tempdir CLEANUP => 1;
+
+    # This is possibly the nastiest interface I have ever seen :).
+    # ccopts prints to STDOUT if we're running under -e; ldopts prints
+    # to STDOUT if it doesn't get any arguments.
+
+    my $ccopts = do {
+        no warnings "redefine";
+        local *ExtUtils::Embed::is_cmd = sub { 0 };
+        ExtUtils::Embed::ccopts;
+    };
+    my $ldopts = ExtUtils::Embed::ldopts(1);
+
+    write_file "$tmp/exemain.c", exemain @argv;
+    
+    warn "Compiling...\n";
+    system qq!$Config{cc} -c $ccopts -o "$tmp/exemain.o" "$tmp/exemain.c"!;
+
+    warn "Linking...\n";
+    system qq!$Config{ld} -o "$exe" "$tmp/exemain.o" $ldopts!;
 }
 
 1;
