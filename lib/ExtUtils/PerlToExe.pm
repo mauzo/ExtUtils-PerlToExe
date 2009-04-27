@@ -113,6 +113,8 @@ sub exemain {
     $ptr++;
 
     for ($C) {
+        # necessary on Win32 for external linking
+        s{#include "perl.h"\K}{\n#include "perlapi.h"};
         s{\*my_perl;\K}{
             static char my_argv_buf[$ptr] = $argv_buf;
         };
