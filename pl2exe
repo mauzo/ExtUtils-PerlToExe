@@ -35,16 +35,16 @@ sub str_to_C (_) {
         $_[0];
 }
 
-my @argv        = ($0, @ARGV, "--");
-my $argc        = @argv;
+my @argv        = (@ARGV, "--");
+my $argc        = @argv + 1;
 my $argv_buf    = str_to_C join "", map "$_\0", @argv;
 my $argv_init   = "";
 my $ptr         = 0;
 my $C           = perlmain;
 
-for (0..$#argv) {
+for (1..@argv) {
     $argv_init .= "my_argv[$_] = my_argv_buf + $ptr;\n";
-    $ptr += 1 + length $argv[$_];
+    $ptr += 1 + length $argv[$_ - 1];
 }
 
 $ptr++;
@@ -58,6 +58,7 @@ for ($C) {
         char *my_argv[$argc + argc];
     };
     s{; \K ( [^;]* perl_parse\( [^)]* ,\s+) argc,\s+ argv,\s+}{
+        my_argv[0] = argv[0];
         $argv_init
 
         /* argv has an extra "\\0" on the end, so we can go all 
