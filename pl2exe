@@ -6,6 +6,12 @@ use strict;
 use ExtUtils::Miniperl  ();
 use List::Util          qw/max/;
 
+=head2 perlmain
+
+Returns the text of F<perlmain.c>, from L<ExtUtils::Miniperl>.
+
+=cut
+
 sub perlmain {
     open my $MAIN, ">", \my $C;
     my $OLD = select $MAIN;
@@ -14,6 +20,13 @@ sub perlmain {
     close $MAIN;
     return $C;
 }
+
+=head2 Cqq [ I<STRING> ]
+
+Escapes I<STRING> suitable for interpolation into a C string. If
+I<STRING> is omitted, defaults to C<$_>.
+
+=cut
 
 sub Cqq (_) {
     my $_ = shift;
@@ -24,6 +37,14 @@ sub Cqq (_) {
     s/([^[:print:]])/sprintf "\\%03o", ord $1/ge;
     $_;
 }
+
+=head2 str_to_C [ I<STRING> ]
+
+Converts I<STRING> into a quoted C string. If I<STRING> is omitted,
+defaults to C<$_>. This will break the string into separately-quoted
+parts, separated by newlines.
+
+=cut
 
 sub str_to_C (_) {
     return 
