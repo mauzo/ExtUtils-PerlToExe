@@ -14,12 +14,25 @@ sub Cqq {
     local $_ = shift // $_;
     s/\\/\\\\/g;
     s/"/\\"/g;
+    s/\n/\\n/g;
+    s/\0/\\0/g;
+    s/([^[:print:]])/sprintf "\\%03o", ord $1/ge;
     $_;
+}
+
+sub str_to_C (_) {
+    return 
+        join "",
+        map qq/\n"$_"/,
+        map Cqq,
+        map { unpack "(a70)*" }
+        split /(?<=[\n\0])/,
+        $_[0];
 }
 
 my @argv        = ($0, @ARGV, "--");
 my $argc        = @argv;
-my $argv_buf    = join qq/\\0"\n"/, map Cqq, @argv;
+my $argv_buf    = str_to_C join "", map "$_\0", @argv;
 my $argv_init   = "";
 my $ptr         = 0;
 
@@ -32,10 +45,10 @@ $ptr++;
 
 for ($C) {
     s{\*my_perl;\K}{
-        static int my_argc;
-        static char my_argv_buf[$ptr] = "$argv_buf\\0";
+        static char my_argv_buf[$ptr] = $argv_buf;
     };
     s{\sexitstatus;\K}{
+        static int my_argc;
         char *my_argv[$argc + argc];
     };
     s{; \K ( [^;]* perl_parse\( [^)]* ,\s+) argc,\s+ argv,\s+}{
