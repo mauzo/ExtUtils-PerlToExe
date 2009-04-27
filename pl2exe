@@ -3,15 +3,20 @@
 use warnings;
 use strict;
 
-use ExtUtils::Miniperl  qw/writemain/;
+use ExtUtils::Miniperl  ();
 use List::Util          qw/max/;
 
-open my $MAIN, ">", \my $C;
-select $MAIN;
-writemain;
+sub perlmain {
+    open my $MAIN, ">", \my $C;
+    my $OLD = select $MAIN;
+    ExtUtils::Miniperl::writemain;
+    select $OLD;
+    close $MAIN;
+    return $C;
+}
 
-sub Cqq {
-    local $_ = shift // $_;
+sub Cqq (_) {
+    my $_ = shift;
     s/\\/\\\\/g;
     s/"/\\"/g;
     s/\n/\\n/g;
@@ -35,6 +40,7 @@ my $argc        = @argv;
 my $argv_buf    = str_to_C join "", map "$_\0", @argv;
 my $argv_init   = "";
 my $ptr         = 0;
+my $C           = perlmain;
 
 for (0..$#argv) {
     $argv_init .= "my_argv[$_] = my_argv_buf + $ptr;\n";
@@ -66,5 +72,4 @@ for ($C) {
     }x;
 }
 
-select STDOUT;
 print $C;
