@@ -32,6 +32,8 @@ use List::Util          qw/max/;
 use File::Temp          qw/tempdir/;
 use File::Slurp         qw/write_file/;
 use IPC::System::Simple qw/system/;
+use File::Copy          qw/cp/;
+use File::Spec::Functions   qw/devnull/;
 
 =head2 perlmain
 
@@ -98,7 +100,10 @@ added to C<perl_parse>'s C<argv>, after a C<-->.
 =cut
 
 sub exemain {
-    my @argv        = (@_, "--");
+    my @argv        = @_;
+
+    grep /^--$/, @argv or push @argv, "--";
+
     my $argc        = @argv + 1;
     my $argv_buf    = str_to_C join "", map "$_\0", @argv;
     my $argv_init   = "";
@@ -136,6 +141,13 @@ sub exemain {
 
             $1 my_argc, my_argv,
         }x;
+        s{
+            xs_init\(pTHX\) \s*
+            \{ .*?
+            file\[\]\ =\ __FILE__; \s*
+            (?:dXSUB_SYS;\s*)?
+            \K
+        }{ }xs;
     }
 
     return $C;
@@ -170,13 +182,47 @@ sub build_exe {
     };
     my $ldopts = ExtUtils::Embed::ldopts(1);
 
+    my ($SCRP, $offset);
+
+    for (@argv) {
+        /^--$/ and last;
+        unless (/^-/) {
+
+            # We supply a fake script argument of /dev/null to
+            # perl_parse, then fixup PL_rsfp and PL_scriptname in
+            # xsinit.
+
+            my $script = $_;
+            $_ = devnull;
+
+            open $SCRP, "<", $script or die "can't read '$script'\n";
+            $offset = -s $SCRP
+                or die "script file '$script' is empty\n";
+
+            last;
+        }
+    }
+
     write_file "$tmp/exemain.c", exemain @argv;
     
     warn "Compiling...\n";
     mysystem qq!$Config{cc} -c $ccopts -o "$tmp/exemain.o" "$tmp/exemain.c"!;
 
+    my $aout = "$tmp/a" . ($Config{_exe} || ".out");
+
     warn "Linking...\n";
-    mysystem qq!$Config{ld} -o "$exe" "$tmp/exemain.o" $ldopts!;
+    mysystem qq!$Config{ld} -o "$aout" "$tmp/exemain.o" $ldopts!;
+
+    open my $EXE,  ">:raw", $exe    or die "can't create '$exe': $!\n";
+    open my $AOUT, "<:raw", $aout   or die "can't read '$aout': $!\n";
+    cp $AOUT, $EXE;
+
+    if ($offset) {
+        warn "Appending script...\n";
+        cp $SCRP, $EXE;
+    }
+
+    close $EXE                      or die "can't write '$exe': $!\n";
 }
 
 1;
