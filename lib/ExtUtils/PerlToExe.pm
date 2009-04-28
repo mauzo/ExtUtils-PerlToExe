@@ -34,10 +34,13 @@ use ExtUtils::Embed     ();
 
 use List::Util          qw/max/;
 use File::Temp          qw/tempdir/;
-use File::Slurp         qw/write_file/;
+use File::Slurp         qw/read_file write_file/;
 use IPC::System::Simple qw/system/;
 use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
+use File::ShareDir      qw/dist_file/;
+
+my $DIST = "ExtUtils-PerlToExe";
 
 =head2 perlmain
 
@@ -104,55 +107,49 @@ added to C<perl_parse>'s C<argv>, after a C<-->.
 =cut
 
 sub exemain {
+    my $C = perlmain;
+    $C =~ s{#include "perl.h"\n\K}{
+        #include "perlapi.h"
+        #include "pl2exe.h"
+    };
+    return $C;
+}
+
+sub pl2exe_c {
     my @argv        = @_;
 
     grep /^--$/, @argv or push @argv, "--";
 
     my $argc        = @argv + 1;
     my $argv_buf    = str_to_C join "", map "$_\0", @argv;
-    my $argv_init   = "";
-    my $ptr         = 0;
-    my $C           = perlmain;
 
-    for (1..@argv) {
-        $argv_init .= "my_argv[$_] = my_argv_buf + $ptr;\n";
-        $ptr += 1 + length $argv[$_ - 1];
+    my $C = read_file dist_file $DIST, "pl2exe.c";
+
+    $C =~ s/(^ .* \$my_argv_init .* $)/\$my_argv_init/mx;
+    my $init_tmpl = $1;
+    my $argv_init = "";
+    my $ptr       = 0;
+
+    for my $n (1..@argv) {
+        given ($init_tmpl) {
+            s/\$n/$n/g;
+            s/\$ptr/$ptr/g;
+            $argv_init .= $_;
+        }
+        $ptr += 1 + length $argv[$n - 1];
     }
 
     $ptr++;
 
     for ($C) {
-        # necessary on Win32 for external linking
-        s{#include "perl.h"\K}{\n#include "perlapi.h"};
-        s{\*my_perl;\K}{
-            static char my_argv_buf[$ptr] = $argv_buf;
-        };
-        s{\sexitstatus;\K}{
-            static int my_argc;
-            char *my_argv[$argc + argc];
-        };
-        s{; \K ( [^;]* perl_parse\( [^)]* ,\s+) argc,\s+ argv,\s+}{
-            my_argv[0] = argv[0];
-            $argv_init
-
-            /* argv has an extra "\\0" on the end, so we can go all 
-               the way up to argv[argc] */
-
-            for (my_argc = 0; my_argc < argc; my_argc++) {
-                my_argv[my_argc + $argc] = argv[my_argc + 1];
-            }
-            my_argc += $argc - 1;
-
-            $1 my_argc, my_argv,
-        }x;
-        s{
-            xs_init\(pTHX\) \s*
-            \{ .*?
-            file\[\]\ =\ __FILE__; \s*
-            (?:dXSUB_SYS;\s*)?
-            \K
-        }{ }xs;
+        s/\$my_argv_init/$argv_init/;
+        s/\$len/$ptr/g;
+        s/\$argv_buf/$argv_buf/g;
+        s/\$argc/$argc/g;
     }
+
+
+    warn $C;
 
     return $C;
 }
@@ -207,15 +204,19 @@ sub build_exe {
         }
     }
 
-    write_file "$tmp/exemain.c", exemain @argv;
+    warn "Generating source...";
+    write_file "$tmp/exemain.c", exemain;
+    write_file "$tmp/pl2exe.c", pl2exe_c @argv;
+    cp dist_file($DIST, "pl2exe.h"), "$tmp/pl2exe.h";
     
     warn "Compiling...\n";
     mysystem qq!$Config{cc} -c $ccopts -o "$tmp/exemain.o" "$tmp/exemain.c"!;
+    mysystem qq!$Config{cc} -c $ccopts -o "$tmp/pl2exe.o" "$tmp/pl2exe.c"!;
 
     my $aout = "$tmp/a" . ($Config{_exe} || ".out");
 
     warn "Linking...\n";
-    mysystem qq!$Config{ld} -o "$aout" "$tmp/exemain.o" $ldopts!;
+    mysystem qq!$Config{ld} -o "$aout" "$tmp/exemain.o" "$tmp/pl2exe.o" $ldopts!;
 
     open my $EXE,  ">:raw", $exe    or die "can't create '$exe': $!\n";
     open my $AOUT, "<:raw", $aout   or die "can't read '$aout': $!\n";
@@ -227,6 +228,7 @@ sub build_exe {
     }
 
     close $EXE                      or die "can't write '$exe': $!\n";
+    chmod 0755, $exe;
 }
 
 1;

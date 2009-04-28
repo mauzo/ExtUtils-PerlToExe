@@ -11,8 +11,10 @@ requires    "File::Slurp"           => "9999.09";
 requires    "IPC::System::Simple"   => 0;
 requires    "File::Copy"            => 0;
 requires    "File::Spec"            => 0;
+requires    "File::ShareDir"        => 0;
 
 install_script  "pl2exe";
+install_share;
 
 auto_install;
 WriteAll;
