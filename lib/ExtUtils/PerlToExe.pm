@@ -39,6 +39,7 @@ use IPC::System::Simple qw/system/;
 use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
 use File::ShareDir      qw/dist_file/;
+use Template::Simple;
 
 my $DIST = "ExtUtils-PerlToExe";
 
@@ -120,36 +121,24 @@ sub pl2exe_c {
 
     grep /^--$/, @argv or push @argv, "--";
 
-    my $argc        = @argv + 1;
-    my $argv_buf    = str_to_C join "", map "$_\0", @argv;
-
     my $C = read_file dist_file $DIST, "pl2exe.c";
 
-    $C =~ s/(^ .* \$my_argv_init .* $)/\$my_argv_init/mx;
-    my $init_tmpl = $1;
-    my $argv_init = "";
-    my $ptr       = 0;
+    my $ptr = 0;
+    my %data;
 
-    for my $n (1..@argv) {
-        given ($init_tmpl) {
-            s/\$n/$n/g;
-            s/\$ptr/$ptr/g;
-            $argv_init .= $_;
-        }
-        $ptr += 1 + length $argv[$n - 1];
+    for (1..@argv) {
+        push @{ $data{my_argv_init} }, 
+            { n => $_, ptr => $ptr };
+        $ptr += 1 + length $argv[$_ - 1];
     }
+    $data{buf_len}  = $ptr + 1;
+    $data{argc}     = @argv + 1;
+    $data{argv_buf} = str_to_C join "", map "$_\0", @argv;
 
-    $ptr++;
-
-    for ($C) {
-        s/\$my_argv_init/$argv_init/;
-        s/\$len/$ptr/g;
-        s/\$argv_buf/$argv_buf/g;
-        s/\$argc/$argc/g;
-    }
-
-
-    warn $C;
+    $C = Template::Simple
+        ->new(pre_delim => '\$\(', post_delim => '\)')
+        ->render($C, \%data);
+    $C = $$C;
 
     return $C;
 }
@@ -204,7 +193,7 @@ sub build_exe {
         }
     }
 
-    warn "Generating source...";
+    warn "Generating source...\n";
     write_file "$tmp/exemain.c", exemain;
     write_file "$tmp/pl2exe.c", pl2exe_c @argv;
     cp dist_file($DIST, "pl2exe.h"), "$tmp/pl2exe.h";
