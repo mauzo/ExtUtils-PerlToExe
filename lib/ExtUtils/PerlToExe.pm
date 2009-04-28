@@ -141,6 +141,12 @@ sub exemain {
     return $C;
 }
 
+sub mysystem {
+    my ($cmd) = @_;
+    warn "$cmd\n";
+    system $cmd;
+}
+
 =head1 build_exe NAME, LIST
 
 Compiles and links a version of perl that runs with the supplied
@@ -167,10 +173,10 @@ sub build_exe {
     write_file "$tmp/exemain.c", exemain @argv;
     
     warn "Compiling...\n";
-    system qq!$Config{cc} -c $ccopts -o "$tmp/exemain.o" "$tmp/exemain.c"!;
+    mysystem qq!$Config{cc} -c $ccopts -o "$tmp/exemain.o" "$tmp/exemain.c"!;
 
     warn "Linking...\n";
-    system qq!$Config{ld} -o "$exe" "$tmp/exemain.o" $ldopts!;
+    mysystem qq!$Config{ld} -o "$exe" "$tmp/exemain.o" $ldopts!;
 }
 
 1;
