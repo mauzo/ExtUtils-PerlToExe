@@ -19,8 +19,12 @@ worked out how MakeMaker's C<make perl> works C<:)>.
 
 =cut
 
+use 5.010;
+
 use warnings;
 use strict;
+
+use version; our $VERSION = '0.01';
 
 use Exporter::NoWork;
 
@@ -233,7 +237,11 @@ Please report bugs to <bug-ExtUtils-PerlToExe@rt.cpan.org>.
 
 =head1 AUTHOR
 
-Copyright 2009 Ben Morrow <ben@morrow.me.uk>.
+Ben Morrow <ben@morrow.me.uk>
+
+=head1 COPYRIGHT
+
+Copyright 2009 Ben Morrow.
 
 This program may be distributed under the same terms as perl itself.
 
