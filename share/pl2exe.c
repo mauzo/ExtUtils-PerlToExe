@@ -1,26 +1,20 @@
 /* Copyright 2009 Ben Morrow <ben@morrow.me.uk> */
 
-/* 
- * This file has substitutions made in it by ExtUtils::PerlToExe, using
- * Template::Simple. c.f. for the syntax.
- */
-
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
 
 #include "pl2exe.h"
+#include "subst.h"
 
 static void my_xsinit(pTHX);
 
-static char         argv_buf[$(buf_len)] = $(argv_buf);
+static char         argv_buf[ARGV_BUF_LEN] = ARGV_BUF;
 static XSINIT_t     real_xsinit;
 
-$(start if_offset)
-
+#ifdef OFFSET
 XS(XS_ExtUtils_PerlToExe_fakescript);
-
-$(end if_offset)
+#endif
 
 /*
  * This is our main hook into perl startup. We rewrite argv, then call
@@ -36,24 +30,21 @@ pl2exe_perl_parse(
 )
 {
     int i;
-    char *my_argv[$(argc) + argc];
+    char *my_argv[ARGC + argc];
 
     real_xsinit = xsinit;
 
     my_argv[0] = argv[0];
-  
-    $(start my_argv_init)
-    my_argv[$(n)] = argv_buf + $(ptr);
-    $(end my_argv_init)
+    INIT_MY_ARGV;
 
     /* argv has an extra "\\0" on the end, so we can go all 
        the way up to argv[argc] */
 
     for (i = 0; i < argc; i++) {
-        my_argv[i + $(argc)] = argv[i + 1];
+        my_argv[i + ARGC] = argv[i + 1];
     }
 
-    i += $(argc) - 1;
+    i += ARGC - 1;
 
     return perl_parse(interp, my_xsinit, i, my_argv, env);
 }
@@ -61,7 +52,7 @@ pl2exe_perl_parse(
 void
 my_xsinit(pTHX)
 {
-    $(start if_offset)
+#ifdef OFFSET
 
     dVAR;
     static const char file[] = __FILE__;
@@ -87,12 +78,12 @@ my_xsinit(pTHX)
     CopFILE_free(PL_curcop);
     CopFILE_set(PL_curcop, PL_origfilename);
 
-    $(end if_offset)
+#endif /* OFFSET */
 
     real_xsinit(aTHX);
 }
 
-$(start if_offset)
+#ifdef OFFSET
 
 #define PL_rsfp (PL_parser->rsfp)
 
@@ -106,10 +97,10 @@ XS(XS_ExtUtils_PerlToExe_fakescript)
 
     PerlIO_close(aTHX_ PL_rsfp);
     PL_rsfp = PerlIO_open(aTHX_ PL_origfilename, "r");
-    PerlIO_seek(aTHX_ PL_rsfp, -$(offset), SEEK_END);
+    PerlIO_seek(aTHX_ PL_rsfp, -OFFSET, SEEK_END);
 
     layer = PerlIO_find_layer(aTHX_ "subfile", 7, 0);
-    PerlIO_push(aTHX_ PL_rsfp, layer, NULL, newSVuv($(offset)));
+    PerlIO_push(aTHX_ PL_rsfp, layer, NULL, newSVuv(OFFSET));
 }
 
-$(end if_offset)
+#endif /* OFFSET */

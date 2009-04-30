@@ -34,12 +34,11 @@ use ExtUtils::Embed     ();
 
 use List::Util          qw/max/;
 use File::Temp          qw/tempdir/;
-use File::Slurp         qw/read_file write_file/;
+use File::Slurp         qw/read_file write_file read_dir/;
 use IPC::System::Simple qw/system/;
 use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
-use File::ShareDir      qw/dist_file/;
-use Template::Simple;
+use File::ShareDir      qw/dist_dir dist_file/;
 
 my $DIST = "ExtUtils-PerlToExe";
 
@@ -86,8 +85,8 @@ parts, separated by newlines.
 
 sub str_to_C (_) {
     return 
-        join "",
-        map qq/\n"$_"/,
+        join "\n",
+        map qq/"$_"/,
         map Cqq,
         map { unpack "(a70)*" }
         split /(?<=[\n\0])/,
@@ -116,38 +115,45 @@ sub exemain {
     return $C;
 }
 
-sub pl2exe_c {
+sub define {
+    my (%macros) = @_;
+
+    return join "", map {
+        $macros{$_} =~ s/\n/\\\n/g;
+        "#define $_ $macros{$_}\n";
+    } keys %macros;
+}
+
+sub subst_h {
     my ($offset, @argv) = @_;
 
     grep /^--$/, @argv or push @argv, "--";
 
-    my $C = read_file dist_file $DIST, "pl2exe.c";
-
     my $ptr = 0;
-    my %data;
 
-    for (1..@argv) {
-        push @{ $data{my_argv_init} }, 
-            { n => $_, ptr => $ptr };
-        $ptr += 1 + length $argv[$_ - 1];
-    }
-    $data{buf_len}  = $ptr + 1;
-    $data{argc}     = @argv + 1;
-    $data{argv_buf} = str_to_C join "", map "$_\0", @argv;
+    my $H = define(
+        INIT_MY_ARGV    => 
+            "STMT_START {\n" . 
+            join("\n", map {
+                my $optr = $ptr;
+                $ptr += 1 + length $argv[$_ - 1];
+                "my_argv[$_] = argv_buf + $optr;";
+            } 1..@argv) .
+            "\n} STMT_END",
+
+        ARGV_BUF_LEN    => $ptr + 1,
+        ARGC            => @argv + 1,
+        ARGV_BUF        => str_to_C(join "", map "$_\0", @argv),
+    );
 
     if ($offset) {
-        $data{if_offset} = {
-            ctlX    => str_to_C($^X),
-            offset  => $offset,
-        };
+        $H .= define(
+            CTL_X       => str_to_C($^X),
+            OFFSET      => $offset,
+        );
     }
 
-    $C = Template::Simple
-        ->new(pre_delim => '\$\(', post_delim => '\)')
-        ->render($C, \%data);
-    $C = $$C;
-
-    return $C;
+    return $H;
 }
 
 sub mysystem {
@@ -201,18 +207,26 @@ sub build_exe {
     }
 
     warn "Generating source...\n";
-    write_file "$tmp/exemain.c", exemain;
-    write_file "$tmp/pl2exe.c", pl2exe_c $offset, @argv;
-    cp dist_file($DIST, "pl2exe.h"), "$tmp/pl2exe.h";
+    my @srcs = read_dir dist_dir $DIST;
+    cp dist_file($DIST, $_), "$tmp/$_" for @srcs;
+
+    write_file "$tmp/exemain.c",    exemain;
+    write_file "$tmp/subst.h",      subst_h $offset, @argv;
+
+    @srcs = grep s/\.c$//, @srcs;
+    push @srcs, qw/exemain/;
     
     warn "Compiling...\n";
-    mysystem qq!$Config{cc} -c $ccopts -o "$tmp/exemain.o" "$tmp/exemain.c"!;
-    mysystem qq!$Config{cc} -c $ccopts -o "$tmp/pl2exe.o" "$tmp/pl2exe.c"!;
+    mysystem qq!$Config{cc} -c $ccopts -o "$tmp/$_.o" "$tmp/$_.c"!
+        for @srcs;
 
     my $aout = "$tmp/a" . ($Config{_exe} || ".out");
 
     warn "Linking...\n";
-    mysystem qq!$Config{ld} -o "$aout" "$tmp/exemain.o" "$tmp/pl2exe.o" $ldopts!;
+    mysystem 
+        qq!$Config{ld} -o "$aout" ! .
+        join(" ", map qq!"$tmp/$_.o"!, @srcs) .
+        qq! $ldopts!;
 
     open my $EXE,  ">:raw", $exe    or die "can't create '$exe': $!\n";
     open my $AOUT, "<:raw", $aout   or die "can't read '$aout': $!\n";
