@@ -52,7 +52,7 @@ Returns the text of F<perlmain.c>, from L<ExtUtils::Miniperl>.
 sub perlmain {
     open my $MAIN, ">", \my $C;
     my $OLD = select $MAIN;
-    ExtUtils::Miniperl::writemain;
+    ExtUtils::Miniperl::writemain ExtUtils::Embed::static_ext;
     select $OLD;
     close $MAIN;
 
@@ -117,7 +117,7 @@ sub exemain {
 }
 
 sub pl2exe_c {
-    my @argv        = @_;
+    my ($offset, @argv) = @_;
 
     grep /^--$/, @argv or push @argv, "--";
 
@@ -134,6 +134,13 @@ sub pl2exe_c {
     $data{buf_len}  = $ptr + 1;
     $data{argc}     = @argv + 1;
     $data{argv_buf} = str_to_C join "", map "$_\0", @argv;
+
+    if ($offset) {
+        $data{if_offset} = {
+            ctlX    => str_to_C($^X),
+            offset  => $offset,
+        };
+    }
 
     $C = Template::Simple
         ->new(pre_delim => '\$\(', post_delim => '\)')
@@ -195,7 +202,7 @@ sub build_exe {
 
     warn "Generating source...\n";
     write_file "$tmp/exemain.c", exemain;
-    write_file "$tmp/pl2exe.c", pl2exe_c @argv;
+    write_file "$tmp/pl2exe.c", pl2exe_c $offset, @argv;
     cp dist_file($DIST, "pl2exe.h"), "$tmp/pl2exe.h";
     
     warn "Compiling...\n";
