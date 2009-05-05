@@ -62,7 +62,9 @@ my_xsinit(pTHX)
         XS_ExtUtils_PerlToExe_fakescript,
         file);
 
-    Perl_av_create_and_push(aTHX_ &PL_preambleav, 
+    if (!PL_preambleav)
+        PL_preambleav = newAV();
+    av_push(PL_preambleav, 
         newSVpvs("BEGIN { ExtUtils::PerlToExe::fakescript() }"));
 
     /*
@@ -91,16 +93,14 @@ XS(XS_ExtUtils_PerlToExe_fakescript)
 {
     dVAR;
     dXSARGS;
-    PerlIO_funcs    *layer;
 
     Perl_load_module(aTHX_ 0, newSVpvs("PerlIO::subfile"), NULL, NULL);
 
-    PerlIO_close(aTHX_ PL_rsfp);
-    PL_rsfp = PerlIO_open(aTHX_ PL_origfilename, "r");
-    PerlIO_seek(aTHX_ PL_rsfp, -OFFSET, SEEK_END);
+    PerlIO_close(PL_rsfp);
+    PL_rsfp = PerlIO_open(PL_origfilename, "r");
+    PerlIO_seek(PL_rsfp, -OFFSET, SEEK_END);
 
-    layer = PerlIO_find_layer(aTHX_ "subfile", 7, 0);
-    PerlIO_push(aTHX_ PL_rsfp, layer, NULL, newSVuv(OFFSET));
+    PerlIO_apply_layers(aTHX_ PL_rsfp, "r", ":subfile");
 }
 
 #endif /* OFFSET */
