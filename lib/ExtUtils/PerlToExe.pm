@@ -49,9 +49,14 @@ Returns the text of F<perlmain.c>, from L<ExtUtils::Miniperl>.
 =cut
 
 sub perlmain {
-    open my $MAIN, ">", \my $C;
+    open my $MAIN, ">", \(my $C = "");
     my $OLD = select $MAIN;
-    ExtUtils::Miniperl::writemain ExtUtils::Embed::static_ext;
+
+    # Ugh. At least it's a global...
+    local %ExtUtils::Miniperl::SEEN;
+    my @ext = ExtUtils::Embed::static_ext;
+    ExtUtils::Miniperl::writemain @ext;
+
     select $OLD;
     close $MAIN;
 
@@ -108,10 +113,10 @@ added to C<perl_parse>'s C<argv>, after a C<-->.
 
 sub exemain {
     my $C = perlmain;
-    $C =~ s{#include "perl.h"\n\K}{
-        #include "perlapi.h"
-        #include "pl2exe.h"
-    };
+    $C =~ s{#include "perl.h"\n\K}{<<C}e;
+#include "perlapi.h"
+#include "pl2exe.h"
+C
     return $C;
 }
 
