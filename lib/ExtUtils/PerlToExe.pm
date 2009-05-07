@@ -39,6 +39,7 @@ use IPC::System::Simple qw/system/;
 use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
 use File::ShareDir      qw/dist_dir dist_file/;
+use Data::Alias;
 
 use Data::Dump qw/dump/;
 
@@ -132,11 +133,11 @@ sub define {
 }
 
 sub subst_h {
-    my ($offset, @argv) = @_;
+    my %opts = @_;
 
-    grep /^--$/, @argv or push @argv, "--";
+    warn "Writing subst.h with " . dump \%opts;
 
-    warn "Writing subst.h with offset $offset, argv " . dump \@argv;
+    alias my @argv = @{$opts{argv}};
 
     my $ptr = 0;
 
@@ -155,10 +156,10 @@ sub subst_h {
         ARGV_BUF        => str_to_C(join "", map "$_\0", @argv),
     );
 
-    if ($offset) {
+    if ($opts{type} eq "append") {
         $H .= define(
             CTL_X       => str_to_C($^X),
-            OFFSET      => $offset,
+            OFFSET      => $opts{offset},
         );
     }
 
@@ -181,6 +182,10 @@ arguments.
 sub build_exe {
     my %opts = @_;
 
+    $opts{type} ||= $opts{script} ? "append" : "noscript";
+    $opts{perl} ||= [];
+    $opts{argv} ||= [];
+
     warn dump \%opts;
 
     my $tmp = tempdir CLEANUP => 1;
@@ -198,18 +203,25 @@ sub build_exe {
 
     my ($SCRP, $offset);
 
-    if ($opts{script}) {
+    given ($opts{type}) {
+        when ("append") {
+            # We supply a fake script argument of /dev/null to
+            # perl_parse, then fixup PL_rsfp and PL_scriptname in
+            # xsinit.
 
-        # We supply a fake script argument of /dev/null to
-        # perl_parse, then fixup PL_rsfp and PL_scriptname in
-        # xsinit.
+            my $script = $opts{script};
+            push @{$opts{perl}}, devnull;
 
-        my $script = $opts{script};
-        push @{$opts{perl}}, devnull;
-
-        open $SCRP, "<", $script or die "can't read '$script'\n";
-        $offset = -s $SCRP
-            or die "script file '$script' is empty\n";
+            open $SCRP, "<", $script or die "can't read '$script'\n";
+            $offset = -s $SCRP
+                or die "script file '$script' is empty\n";
+        }
+        when ("path") {
+            push @{$opts{perl}}, $opts{script};
+        }
+        when ("noscript") {
+            push @{$opts{perl}}, "--";
+        }
     }
 
     warn "Generating source...\n";
@@ -217,10 +229,10 @@ sub build_exe {
     cp dist_file($DIST, $_), "$tmp/$_" for @srcs;
 
     write_file "$tmp/exemain.c", exemain;
-    write_file "$tmp/subst.h",   subst_h $offset, 
-        @{$opts{perl}}, 
-        ($opts{script} ? () : "--"), 
-        @{$opts{argv}};
+    write_file "$tmp/subst.h",   subst_h
+        type    => $opts{type},
+        offset  => $offset,
+        argv    => [@{$opts{perl}}, @{$opts{argv}}];
 
     @srcs = grep s/\.c$//, @srcs;
     push @srcs, qw/exemain/;
