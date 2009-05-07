@@ -1,8 +1,67 @@
 #!/usr/bin/perl
 
+=head1 NAME
+
+pl2exe - Build a binary executable from a Perl script
+
+=cut
+
 use warnings;
 use strict;
 
 use ExtUtils::PerlToExe qw/build_exe/;
+use Getopt::Long;
+use Pod::Usage;
 
-build_exe "a.out", @ARGV;
+Getopt::Long::Configure("bundling");
+
+@ARGV or pod2usage 1;
+
+my %opts;
+GetOptions \%opts, qw{
+    help|h
+    output|o=s
+    verbose|v+
+    type|T=s
+    gui
+    icon=s
+    secure|S!
+} or pod2usage;
+$opts{help} and pod2usage 1;
+
+=head1 SYNOPSIS
+
+pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE] [-S|--secure] 
+    [--gui] [--icon ICON] [SCRIPT] [ -- PERL OPTIONS [ -- ARGV ] ]
+
+=head1 OPTIONS
+
+        --gui       Make a GUI executable. Only on Win32.
+    -h, --help      Display this help.
+        --icon      Set the icon for the exe. Only on Win32.
+    -S, --secure    SHA1 any included script.
+    -T, --type      Select how to include the script:
+        append      Append it to the executable (default).
+        compile     Compile it in as a C string.
+        path        Just bake in the full path.
+    -o, --output    Output file. Defaults to F<a.out>.
+    -v, --verbose   Increase verbosity.
+
+=cut
+
+$ARGV[0] =~ /^-/ or $opts{script} = shift;
+
+my $list = $opts{perl} = [];
+
+for (@ARGV) {
+    /^--$/ and not $opts{argv} and $list = $opts{argv} = [], next;
+    push @$list, $_;
+}
+
+build_exe %opts;
+
+=head1 AUTHOR
+
+Copyright 2009 Ben Morrow <ben@morrow.me.uk>.
+
+This program is licensed under the same terms as Perl.

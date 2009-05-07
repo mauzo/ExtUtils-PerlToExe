@@ -40,6 +40,8 @@ use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
 use File::ShareDir      qw/dist_dir dist_file/;
 
+use Data::Dump qw/dump/;
+
 my $DIST = "ExtUtils-PerlToExe";
 
 =head2 perlmain
@@ -134,6 +136,8 @@ sub subst_h {
 
     grep /^--$/, @argv or push @argv, "--";
 
+    warn "Writing subst.h with offset $offset, argv " . dump \@argv;
+
     my $ptr = 0;
 
     my $H = define(
@@ -167,7 +171,7 @@ sub mysystem {
     system $cmd;
 }
 
-=head1 build_exe NAME, LIST
+=head1 build_exe
 
 Compiles and links a version of perl that runs with the supplied
 arguments.
@@ -175,7 +179,9 @@ arguments.
 =cut
 
 sub build_exe {
-    my ($exe, @argv) = @_;
+    my %opts = @_;
+
+    warn dump \%opts;
 
     my $tmp = tempdir CLEANUP => 1;
 
@@ -192,31 +198,29 @@ sub build_exe {
 
     my ($SCRP, $offset);
 
-    for (@argv) {
-        /^--$/ and last;
-        unless (/^-/) {
+    if ($opts{script}) {
 
-            # We supply a fake script argument of /dev/null to
-            # perl_parse, then fixup PL_rsfp and PL_scriptname in
-            # xsinit.
+        # We supply a fake script argument of /dev/null to
+        # perl_parse, then fixup PL_rsfp and PL_scriptname in
+        # xsinit.
 
-            my $script = $_;
-            $_ = devnull;
+        my $script = $opts{script};
+        push @{$opts{perl}}, devnull;
 
-            open $SCRP, "<", $script or die "can't read '$script'\n";
-            $offset = -s $SCRP
-                or die "script file '$script' is empty\n";
-
-            last;
-        }
+        open $SCRP, "<", $script or die "can't read '$script'\n";
+        $offset = -s $SCRP
+            or die "script file '$script' is empty\n";
     }
 
     warn "Generating source...\n";
     my @srcs = read_dir dist_dir $DIST;
     cp dist_file($DIST, $_), "$tmp/$_" for @srcs;
 
-    write_file "$tmp/exemain.c",    exemain;
-    write_file "$tmp/subst.h",      subst_h $offset, @argv;
+    write_file "$tmp/exemain.c", exemain;
+    write_file "$tmp/subst.h",   subst_h $offset, 
+        @{$opts{perl}}, 
+        ($opts{script} ? () : "--"), 
+        @{$opts{argv}};
 
     @srcs = grep s/\.c$//, @srcs;
     push @srcs, qw/exemain/;
@@ -225,25 +229,28 @@ sub build_exe {
     mysystem qq!$Config{cc} -c $ccopts -o "$tmp/$_.o" "$tmp/$_.c"!
         for @srcs;
 
-    my $aout = "$tmp/a" . ($Config{_exe} || ".out");
+    my $aout = "a" . ($Config{_exe} || ".out");
+    $opts{output} //= $aout;
+    my $exe  = $offset ? "$tmp/$aout" : $opts{output};
 
     warn "Linking...\n";
     mysystem 
-        qq!$Config{ld} -o "$aout" ! .
+        qq!$Config{ld} -o "$exe" ! .
         join(" ", map qq!"$tmp/$_.o"!, @srcs) .
         qq! $ldopts!;
 
-    open my $EXE,  ">:raw", $exe    or die "can't create '$exe': $!\n";
-    open my $AOUT, "<:raw", $aout   or die "can't read '$aout': $!\n";
-    cp $AOUT, $EXE;
-
     if ($offset) {
-        warn "Appending script...\n";
-        cp $SCRP, $EXE;
-    }
+        open my $OUT, ">:raw", $opts{output}
+                                    or die "can't create '$opts{output}': $!\n";
+        open my $EXE, "<:raw", $exe or die "can't read '$exe': $!\n";
+        cp $EXE, $OUT;
 
-    close $EXE                      or die "can't write '$exe': $!\n";
-    chmod 0755, $exe;
+        warn "Appending script...\n";
+        cp $SCRP, $OUT;
+
+        close $OUT                  or die "can't write '$opts{output}': $!\n";
+        chmod 0755, $opts{output};
+    }
 }
 
 1;
