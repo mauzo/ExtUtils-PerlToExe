@@ -67,6 +67,13 @@ my_xsinit(pTHX)
     av_push(PL_preambleav, 
         newSVpvs("BEGIN { ExtUtils::PerlToExe::fakescript() }"));
 
+    if (PL_preprocess)
+        croak("Can't use -P with pl2exe");
+
+    TAINT;
+    TAINT_PROPER("appended script");
+    TAINT_NOT;
+
     /*
      * We can't reopen PL_rsfp yet as it hasn't been set (the file is
      * open, it's just in an auto variable in S_parse_body). However,
