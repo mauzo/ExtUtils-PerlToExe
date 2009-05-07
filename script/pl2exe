@@ -17,8 +17,6 @@ use Pod::Usage;
 
 @ARGV or pod2usage "I need something to convert!";
 
-warn "ARGV = " . Data::Dump::dump \@ARGV;
-
 my %opts;
 GetOptions \%opts, qw{
     help|h

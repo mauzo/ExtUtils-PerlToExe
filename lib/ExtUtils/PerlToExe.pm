@@ -45,6 +45,13 @@ use Data::Dump qw/dump/;
 
 my $DIST = "ExtUtils-PerlToExe";
 
+my $Verb;
+
+sub msg {
+    my ($v, $msg) = @_;
+    $Verb >= $v and warn "$msg\n";
+}
+
 =head2 perlmain
 
 Returns the text of F<perlmain.c>, from L<ExtUtils::Miniperl>.
@@ -135,7 +142,7 @@ sub define {
 sub subst_h {
     my %opts = @_;
 
-    warn "Writing subst.h with " . dump \%opts;
+    msg 3, "Writing subst.h with " . dump \%opts;
 
     alias my @argv = @{$opts{argv}};
 
@@ -168,7 +175,7 @@ sub subst_h {
 
 sub mysystem {
     my ($cmd) = @_;
-    warn "$cmd\n";
+    msg 2, $cmd;
     system $cmd;
 }
 
@@ -186,7 +193,9 @@ sub build_exe {
     $opts{perl} ||= [];
     $opts{argv} ||= [];
 
-    warn dump \%opts;
+    $Verb = $opts{verbose} || 0;
+
+    msg 3, "Building an exe with " . dump \%opts;
 
     my $tmp = tempdir CLEANUP => 1;
 
@@ -224,7 +233,7 @@ sub build_exe {
         }
     }
 
-    warn "Generating source...\n";
+    msg 1, "Generating source...";
     my @srcs = read_dir dist_dir $DIST;
     cp dist_file($DIST, $_), "$tmp/$_" for @srcs;
 
@@ -237,31 +246,26 @@ sub build_exe {
     @srcs = grep s/\.c$//, @srcs;
     push @srcs, qw/exemain/;
     
-    warn "Compiling...\n";
+    msg 1, "Compiling...";
     mysystem qq!$Config{cc} -c $ccopts -o "$tmp/$_.o" "$tmp/$_.c"!
         for @srcs;
 
-    my $aout = "a" . ($Config{_exe} || ".out");
-    $opts{output} //= $aout;
-    my $exe  = $offset ? "$tmp/$aout" : $opts{output};
+    my $exe = $opts{output} // "a" . ($Config{_exe} || ".out");
 
-    warn "Linking...\n";
+    msg 1, "Linking...";
     mysystem 
         qq!$Config{ld} -o "$exe" ! .
         join(" ", map qq!"$tmp/$_.o"!, @srcs) .
         qq! $ldopts!;
 
     if ($offset) {
-        open my $OUT, ">:raw", $opts{output}
-                                    or die "can't create '$opts{output}': $!\n";
-        open my $EXE, "<:raw", $exe or die "can't read '$exe': $!\n";
-        cp $EXE, $OUT;
+        msg 1, "Appending script...";
+        msg 2, qq/cat "$opts{script}" >> "$exe"/;
 
-        warn "Appending script...\n";
+        open my $OUT, ">>:raw", $exe
+                            or die "can't append to '$exe': $!\n";
         cp $SCRP, $OUT;
-
-        close $OUT                  or die "can't write '$opts{output}': $!\n";
-        chmod 0755, $opts{output};
+        close $OUT          or die "can't write '$exe': $!\n";
     }
 }
 
