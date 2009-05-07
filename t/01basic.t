@@ -25,6 +25,31 @@ my $t;
     is      $out,   "",                 "...without writing to STDOUT";
 }
 
+sub has_XS {
+    my ($C, $mod, $name) = @_;
+    my $B = Test::More->builder;
+
+    my $strap = $mod eq "DynaLoader" ? "_DynaLoader" : "strap";
+    (my $boot  = "boot_$mod") =~ s/:/_/g;
+    my $rx = qr/\QnewXS("${mod}::boot$strap", $boot, file)/;
+
+    $B->like($C, $rx, $name);
+}
+
+{
+    BEGIN { $t += 4 }
+
+    no warnings "redefine";
+    local *ExtUtils::Embed::static_ext = sub { qw/DynaLoader Foo::Bar/ };
+
+    for my $try ("", " (second time)") {
+        my $C = perlmain;
+
+        has_XS $C, "DynaLoader", "perlmain provides boot_DynaLoader$try";
+        has_XS $C, "Foo::Bar",   "perlmain provies boot_Foo__Bar$try";
+    }
+}
+
 {
     my %strings;
     BEGIN {
@@ -86,13 +111,47 @@ is define(FOO => "one\ntwo"),   <<C,    "#defines with newlines";
 two
 C
 
+{
+    BEGIN { $t += 6 }
+
+    my @warn;
+    local $SIG{__WARN__} = sub { push @warn, $_[0] };
+
+    ExtUtils::PerlToExe::_msg 1, "foo";
+    is  @warn,      0,              "msg doesn't warn without -v";
+
+    local $ExtUtils::PerlToExe::Verb = 2;
+
+    @warn = ();
+    ExtUtils::PerlToExe::_msg 1, "foo";
+
+    is  @warn,      1,              "msg warns for high -v";
+    is  $warn[0],   "foo\n",        "...correctly";
+
+    @warn = ();
+    ExtUtils::PerlToExe::_msg 2, "bar";
+
+    is  @warn,      1,              "msg warns for exact -v";
+    is  $warn[0],   "bar\n",        "...correctly";
+
+    @warn = ();
+    ExtUtils::PerlToExe::_msg 3, "baz";
+
+    is  @warn,      0,              "msg doesn't warn for low -v";
+}
+
 my $aout = "a" . ($Config{_exe} || ".out");
 
 sub exe_is {
-    my ($args, $expout, $experr, $name) = @_;
+    my ($opts, $expout, $experr, $name) = @_;
     my $B = Test::More->builder;
 
-    my $rv = eval { build_exe $aout, @$args };
+    ref $opts eq "ARRAY" and
+        $opts = { perl => $opts };
+    $opts->{output} ||= $aout;
+
+    my $rv = eval { build_exe %$opts };
+    my $E = $@;
 
     if ($B->ok($rv, "$name builds OK")) {
         $rv = run ["./$aout"], \"", \my ($gotout, $goterr);
@@ -101,6 +160,7 @@ sub exe_is {
         $B->is_eq($goterr, $experr, "...correct STDERR");
     }
     else {
+        $B->diag($E);
         $B->skip("(exe did not build)") for 1..3;
     }
 
