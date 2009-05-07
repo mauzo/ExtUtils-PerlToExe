@@ -45,9 +45,10 @@ use Data::Dump qw/dump/;
 
 my $DIST = "ExtUtils-PerlToExe";
 
-my $Verb;
+# this is 'our' for the tests only
+our $Verb = 0;
 
-sub msg {
+sub _msg {
     my ($v, $msg) = @_;
     $Verb >= $v and warn "$msg\n";
 }
@@ -142,7 +143,7 @@ sub define {
 sub subst_h {
     my %opts = @_;
 
-    msg 3, "Writing subst.h with " . dump \%opts;
+    _msg 3, "Writing subst.h with " . dump \%opts;
 
     alias my @argv = @{$opts{argv}};
 
@@ -173,9 +174,9 @@ sub subst_h {
     return $H;
 }
 
-sub mysystem {
+sub _mysystem {
     my ($cmd) = @_;
-    msg 2, $cmd;
+    _msg 2, $cmd;
     system $cmd;
 }
 
@@ -195,7 +196,7 @@ sub build_exe {
 
     $Verb = $opts{verbose} || 0;
 
-    msg 3, "Building an exe with " . dump \%opts;
+    _msg 3, "Building an exe with " . dump \%opts;
 
     my $tmp = tempdir CLEANUP => 1;
 
@@ -233,7 +234,7 @@ sub build_exe {
         }
     }
 
-    msg 1, "Generating source...";
+    _msg 1, "Generating source...";
     my @srcs = read_dir dist_dir $DIST;
     cp dist_file($DIST, $_), "$tmp/$_" for @srcs;
 
@@ -246,27 +247,29 @@ sub build_exe {
     @srcs = grep s/\.c$//, @srcs;
     push @srcs, qw/exemain/;
     
-    msg 1, "Compiling...";
-    mysystem qq!$Config{cc} -c $ccopts -o "$tmp/$_.o" "$tmp/$_.c"!
+    _msg 1, "Compiling...";
+    _mysystem qq!$Config{cc} -c $ccopts -o "$tmp/$_.o" "$tmp/$_.c"!
         for @srcs;
 
     my $exe = $opts{output} // "a" . ($Config{_exe} || ".out");
 
-    msg 1, "Linking...";
-    mysystem 
+    _msg 1, "Linking...";
+    _mysystem 
         qq!$Config{ld} -o "$exe" ! .
         join(" ", map qq!"$tmp/$_.o"!, @srcs) .
         qq! $ldopts!;
 
     if ($offset) {
-        msg 1, "Appending script...";
-        msg 2, qq/cat "$opts{script}" >> "$exe"/;
+        _msg 1, "Appending script...";
+        _msg 2, qq/cat "$opts{script}" >> "$exe"/;
 
         open my $OUT, ">>:raw", $exe
                             or die "can't append to '$exe': $!\n";
         cp $SCRP, $OUT;
         close $OUT          or die "can't write '$exe': $!\n";
     }
+
+    return 1;
 }
 
 1;
