@@ -1,18 +1,10 @@
-Forbid taint mode with a subfile script: it's insecure.
-
 Fix path manipulations to use FIle::Spec.
 
 Fake up PerlIO_find_layer if its not available.
 
 Makefile.PL configuration.
 
-Parse our own options. PL2EXE OPTS [ -- PERL OPTS [ -- ARGV ] ]
-
--o
-
 --gui, --icon
-
-Option to not include the script, just bake-in its path.
 
 Option to compile in the script, using :scalar rather than :subfile.
 
@@ -24,6 +16,7 @@ Docs.
 
 5.8-ize.
 
+static linking / ex::lib::zip
+
 SHA1 any included data and check on load.
 
-static linking / ex::lib::zip
