@@ -9,13 +9,15 @@ pl2exe - Build a binary executable from a Perl script
 use warnings;
 use strict;
 
+use version; our $VERSION = "0.01";
+
 use ExtUtils::PerlToExe qw/build_exe/;
-use Getopt::Long;
+use Getopt::Long 2.33 qw/:config bundling require_order no_ignore_case/;
 use Pod::Usage;
 
-Getopt::Long::Configure("bundling");
+@ARGV or pod2usage "I need something to convert!";
 
-@ARGV or pod2usage 1;
+warn "ARGV = " . Data::Dump::dump \@ARGV;
 
 my %opts;
 GetOptions \%opts, qw{
@@ -23,16 +25,13 @@ GetOptions \%opts, qw{
     output|o=s
     verbose|v+
     type|T=s
-    gui
-    icon=s
-    secure|S!
 } or pod2usage;
 $opts{help} and pod2usage 1;
 
 =head1 SYNOPSIS
 
-pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE] [-S|--secure] 
-    [--gui] [--icon ICON] [SCRIPT] [ -- PERL OPTIONS [ -- ARGV ] ]
+pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE] 
+    [SCRIPT] [ -- PERL OPTIONS [ -- ARGV ] ]
 
 =head1 OPTIONS
 
@@ -42,8 +41,8 @@ pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE] [-S|--secure]
     -S, --secure    SHA1 any included script.
     -T, --type      Select how to include the script:
         append      Append it to the executable (default).
-        compile     Compile it in as a C string.
-        path        Just bake in the full path.
+        noscript    Just bake in the given options to perl.
+        path        Just bake in the provided path.
     -o, --output    Output file. Defaults to F<a.out>.
     -v, --verbose   Increase verbosity.
 

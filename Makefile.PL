@@ -12,8 +12,9 @@ requires    "IPC::System::Simple"   => 0;
 requires    "File::Copy"            => 0;
 requires    "File::Spec"            => 0;
 requires    "File::ShareDir"        => 0;
-requires    "Template::Simple"      => "0.02";
 requires    "PerlIO::subfile"       => 0;
+requires    "Getopt::Long"          => "2.33";
+requires    "Pod::Usage"            => 0;
 
 install_script  "pl2exe";
 install_share;
