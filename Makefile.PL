@@ -16,6 +16,9 @@ requires    "PerlIO::subfile"       => 0;
 requires    "Getopt::Long"          => "2.33";
 requires    "Pod::Usage"            => 0;
 requires    "Data::Alias"           => 0;
+requires    "IPC::Run"              => 0;
+requires    "Data::Dump"            => 0;
+requires    "Path::Class"           => 0;
 
 install_script  "pl2exe";
 install_share;
