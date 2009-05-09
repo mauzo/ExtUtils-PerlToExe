@@ -140,39 +140,4 @@ C
     is  @warn,      0,              "msg doesn't warn for low -v";
 }
 
-my $aout = "a" . ($Config{_exe} || ".out");
-
-sub exe_is {
-    my ($opts, $expout, $experr, $name) = @_;
-    my $B = Test::More->builder;
-
-    ref $opts eq "ARRAY" and
-        $opts = { perl => $opts };
-    $opts->{output} ||= $aout;
-
-    my $rv = eval { build_exe %$opts };
-    my $E = $@;
-
-    if ($B->ok($rv, "$name builds OK")) {
-        $rv = run ["./$aout"], \"", \my ($gotout, $goterr);
-        $B->ok($rv, "...runs OK");
-        $B->is_eq($gotout, $expout, "...correct STDOUT");
-        $B->is_eq($goterr, $experr, "...correct STDERR");
-    }
-    else {
-        $B->diag($E);
-        $B->skip("(exe did not build)") for 1..3;
-    }
-
-    unlink $aout;
-}
-
-{
-    BEGIN { $t += 3 * 4 }
-
-    exe_is ["-e1"], "", "",                     "-e1";
-    exe_is ["-MExporter", "-e1"], "", "",       "nonXS module";
-    exe_is ["-MFile::Glob", "-e1"], "", "",     "XS module";
-}
-
 BEGIN { plan tests => $t }

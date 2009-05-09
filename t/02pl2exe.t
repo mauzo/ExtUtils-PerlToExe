@@ -25,6 +25,7 @@ sub p2e_is {
     local @ARGV = @$argv;
     do $pl2exe;
 
+    # annoyingly, Test::Builder doesn't provide is_deeply
     local $Test::Builder::Level = $Test::Builder::Level + 1;
     is_deeply \%opts, $exp, $name;
 }
@@ -38,11 +39,11 @@ sub p2e_is {
 
     p2e_is [qw/-o bar foo/],
         { script => "foo", perl => [], output => "bar" },
-        "specify output file";
+        "pass -o to pl2exe";
 
     p2e_is [qw/-v foo/],
         { script => "foo", perl => [], verbose => 1 },
-        "specify verbosity";
+        "pass -v to pl2exe";
 
     p2e_is [qw/foo -v/],
         { script => "foo", perl => ["-v"] },

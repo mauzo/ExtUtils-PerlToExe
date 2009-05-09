@@ -1,0 +1,3 @@
+$\ = "\n";
+print for PerlIO::get_layers(\*DATA);
+__DATA__
