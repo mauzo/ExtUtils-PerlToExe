@@ -55,27 +55,41 @@ sub run {
 sub exe_is {
     my $exit = 0;
     @_ == 5 and ($exit) = splice @_, 3, 1;
-    my ($opts, $expout, $experr, $name) = @_;
+    my ($p2e, $opts, $name) = @_;
     my $B = Test::More->builder;
 
+    ref $p2e eq "ARRAY" and
+        $p2e = { perl => $p2e };
+    $p2e->{output} ||= "a$_exe";
+    my $exe = file($p2e->{output})->absolute;
+
+    ref $p2e->{script} eq "ARRAY" and
+        $p2e->{script} = file @{$p2e->{script}};
+
     ref $opts eq "ARRAY" and
-        $opts = { perl => $opts };
+        $opts = {
+            stdout => $opts->[0],
+            stderr => $opts->[1],
+            exit   => $opts->[2],
+        };
 
-    $opts->{output} ||= "a$_exe";
-    my $exe = file($opts->{output})->absolute;
+    $opts->{argv}   ||= [];
+    $opts->{exit}   ||= 0;
+    $_ //= "" for @{$opts}{qw/stdin stdout stderr/};
 
-    ref $opts->{script} eq "ARRAY" and
-        $opts->{script} = file @{$opts->{script}};
-
-    my $rv = eval { build_exe %$opts };
+    my $rv = eval { build_exe %$p2e };
     my $E = $@;
 
     if ($B->ok($rv, "$name builds OK")) {
-        $rv = run [$exe], \"", \my ($gotout, $goterr);
+
+        $rv = run 
+            [$exe, @{$opts->{argv}}], 
+            \($opts->{stdin}), \my ($gotout, $goterr);
         $B->ok(defined $rv, "...runs OK");
-        $B->is_num($rv, $exit, "...correct exit code");
-        $B->is_or_like($gotout, $expout, "...correct STDOUT");
-        $B->is_or_like($goterr, $experr, "...correct STDERR");
+
+        $B->is_num($rv, $opts->{exit}, "...correct exit code");
+        $B->is_or_like($gotout, $opts->{stdout}, "...correct STDOUT");
+        $B->is_or_like($goterr, $opts->{stderr}, "...correct STDERR");
     }
     else {
         $B->diag($E);
@@ -87,12 +101,12 @@ sub exe_is {
 
 BEGIN { $t += 4 * 5 }
 
-exe_is ["-e1"], "", "",                     "-e1";
-exe_is ["-MExporter", "-e1"], "", "",       "nonXS module";
-exe_is ["-MFile::Glob", "-e1"], "", "",     "XS module";
+exe_is ["-e1"], ["", ""],                   "-e1";
+exe_is ["-MExporter", "-e1"], ["", ""],     "nonXS module";
+exe_is ["-MFile::Glob", "-e1"], ["", ""],   "XS module";
 
 exe_is { perl => ["-e1"], output => "foo$_exe" },
-    "", "",                                 "with -o";
+    ["", ""],                               "with -o";
 
 BEGIN { $t += 3 * 5 }
 
@@ -102,58 +116,97 @@ my $subfile = qr/\A\Q$layers\Esubfile\(.*\)\n\z/;
 exe_is {
     script  => [qw/t layers/],
     type    => "append",
-}, $subfile, "",                    "-T append uses :subfile";
+}, [$subfile, ""],                  "-T append uses :subfile";
 
 exe_is {
     script  => [qw/t layers/],
     type    => "path",
-}, $layers, "",                     "-T path doesn't";
+}, [$layers, ""],                   "-T path doesn't";
 
 exe_is {
     script  => [qw/t layers/],
-}, $subfile, "",                    "default is -T append";
+}, [$subfile, ""],                  "default is -T append";
 
 BEGIN { $t += 3 * 5 }
 
-exe_is ["-eprint \$^X"], $^X, "",   "\$^X with -T noscript";
+exe_is ["-eprint \$^X"], [$^X, ""], "\$^X with -T noscript";
 
 exe_is { 
     script => [qw/t ctrlX/],
-}, $^X, "",                         "\$^X with -T append";
+}, [$^X, ""],                       "\$^X with -T append";
 
 exe_is { 
     script => [qw/t ctrlX/],
     type => "path",
-}, $^X, "",                         "\$^X with -T path";
+}, [$^X, ""],                       "\$^X with -T path";
 
 BEGIN { $t += 3 * 5 }
 
 my $taint = "Insecure dependency in";
 
-exe_is ["-T", "-e1"], "", "",        "taint with -T noscript";
+exe_is ["-T", "-e1"], ["", ""],      "taint with -T noscript";
 
 exe_is {
     perl   => ["-T"],
     script => [qw/t null/],
-}, "", qr/$taint appended script/, 255,
+}, ["", qr/$taint appended script/, 255],
                                     "taint with -T append";
 
 exe_is {
     perl    => ["-T"],
     script  => [qw/t null/],
     type    => "path",
-}, "", "",                          "taint with -T path";
+}, ["", ""],                        "taint with -T path";
 
 BEGIN { $t += 2 * 5 }
 
 exe_is ["-Teopen X, '>>', \$^X"],
-    "", qr/$taint open/, 255,       "\$^X is tainted with -T noscript";
+    ["", qr/$taint open/, 255],     "\$^X is tainted with -T noscript";
 
 exe_is {
     perl    => ["-T"],
     script  => [qw/t ctrlX/],
     type    => "path",
-}, "", qr/$taint open/, 255,        "\$^X is tainted with -T path";
+}, ["", qr/$taint open/, 255],      "\$^X is tainted with -T path";
+
+BEGIN { $t += 4 * 5 }
+
+my $e_argv = [
+    '-e$\ = "\n";',
+    '-ebinmode STDOUT;',
+    '-eprint for @ARGV;',
+];
+
+exe_is $e_argv, ["", ""],           "empty ARGV";
+
+exe_is {
+    perl => $e_argv,
+    argv => [qw/one two/],
+}, [<<OUT, ""],                     "compiled-in ARGV";
+one
+two
+OUT
+
+exe_is $e_argv, {
+    argv    => [qw/one two/],
+    stdout  => <<OUT,
+one
+two
+OUT
+},                                  "supplied ARGV";
+
+exe_is {
+    perl    => $e_argv,
+    argv    => [qw/one two/],
+}, {
+    argv    => [qw/three four/],
+    stdout  => <<OUT,
+one
+two
+three
+four
+OUT
+},                                  "built-in and supplied ARGV";
 
 BEGIN { plan tests => $t }
 

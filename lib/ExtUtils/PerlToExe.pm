@@ -229,9 +229,6 @@ sub build_exe {
         when ("path") {
             push @{$opts{perl}}, $opts{script};
         }
-        when ("noscript") {
-            push @{$opts{perl}}, "--";
-        }
     }
 
     _msg 1, "Generating source...";
