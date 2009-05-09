@@ -52,11 +52,15 @@ pl2exe_perl_parse(
 void
 my_xsinit(pTHX)
 {
-#ifdef OFFSET
-
     dVAR;
     static const char file[] = __FILE__;
     GV *ctlXgv;
+    SV *ctlX;
+
+    ctlXgv = gv_fetchpvs("\030", GV_NOTQUAL, SVt_PV);
+    ctlX   = GvSV(ctlXgv);
+
+#ifdef OFFSET
 
     newXS("ExtUtils::PerlToExe::fakescript",
         XS_ExtUtils_PerlToExe_fakescript,
@@ -81,13 +85,16 @@ my_xsinit(pTHX)
      * called on it.
      */
 
-    ctlXgv = gv_fetchpvs("\030", GV_NOTQUAL, SVt_PV);
-
-    PL_origfilename = savepv(SvPV_nolen(GvSV(ctlXgv)));
+    PL_origfilename = savepv(SvPV_nolen(ctlX));
     CopFILE_free(PL_curcop);
     CopFILE_set(PL_curcop, PL_origfilename);
 
 #endif /* OFFSET */
+
+#ifdef CTL_X
+    sv_setpv(ctlX, CTL_X);
+    SvTAINTED_on(ctlX);
+#endif
 
     real_xsinit(aTHX);
 }

@@ -162,11 +162,11 @@ sub subst_h {
         ARGV_BUF_LEN    => $ptr + 1,
         ARGC            => @argv + 1,
         ARGV_BUF        => str_to_C(join "", map "$_\0", @argv),
+        CTL_X           => str_to_C($^X),
     );
 
     if ($opts{type} eq "append") {
         $H .= define(
-            CTL_X       => str_to_C($^X),
             OFFSET      => $opts{offset},
         );
     }
