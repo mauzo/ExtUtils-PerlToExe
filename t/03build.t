@@ -30,7 +30,7 @@ sub exe_is {
         $opts = { perl => $opts };
 
     $opts->{output} ||= "a$_exe";
-    my $exe = file curdir, $opts->{output};
+    my $exe = file($opts->{output})->absolute;
 
     ref $opts->{script} eq "ARRAY" and
         $opts->{script} = file @{$opts->{script}};
