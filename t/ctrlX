@@ -1,1 +1,2 @@
+open my $X, ">>", $^X;
 print $^X;
