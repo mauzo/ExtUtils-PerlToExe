@@ -38,6 +38,7 @@ use File::Slurp         qw/read_file write_file read_dir/;
 use IPC::System::Simple qw/system/;
 use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
+use Path::Class         qw/dir file/;
 use File::ShareDir      qw/dist_dir dist_file/;
 use Data::Alias;
 
@@ -194,11 +195,16 @@ sub build_exe {
     $opts{perl} ||= [];
     $opts{argv} ||= [];
 
+    ref $opts{script} eq "ARRAY"
+        and $opts{script} = file @{$opts{script}};
+
+    my $exe = $opts{output} // "a" . ($Config{_exe} || ".out");
+
     $Verb = $opts{verbose} || 0;
 
     _msg 3, "Building an exe with " . dump \%opts;
 
-    my $tmp = tempdir CLEANUP => 1;
+    my $tmp = dir tempdir CLEANUP => 1;
 
     # This is possibly the nastiest interface I have ever seen :).
     # ccopts prints to STDOUT if we're running under -e; ldopts prints
@@ -233,28 +239,32 @@ sub build_exe {
 
     _msg 1, "Generating source...";
     my @srcs = read_dir dist_dir $DIST;
-    cp dist_file($DIST, $_), "$tmp/$_" for @srcs;
+    cp dist_file($DIST, $_), $tmp->file($_) for @srcs;
 
-    write_file "$tmp/exemain.c", exemain;
-    write_file "$tmp/subst.h",   subst_h
+    # File::Slurp doesn't stringify objects properly
+    write_file "".$tmp->file("exemain.c"), exemain;
+    write_file "".$tmp->file("subst.h"),   subst_h
         type    => $opts{type},
         offset  => $offset,
         argv    => [@{$opts{perl}}, @{$opts{argv}}];
 
     @srcs = grep s/\.c$//, @srcs;
     push @srcs, qw/exemain/;
+
+    my @objs;
     
     _msg 1, "Compiling...";
-    _mysystem qq!$Config{cc} -c $ccopts -o "$tmp/$_.o" "$tmp/$_.c"!
-        for @srcs;
-
-    my $exe = $opts{output} // "a" . ($Config{_exe} || ".out");
+    for (@srcs) {
+        my $c = $tmp->file("$_.c");
+        my $o = $tmp->file("$_$Config{_o}");
+        push @objs, $o;
+        _mysystem qq!$Config{cc} -c $ccopts -o "$o" "$c"!
+    }
 
     _msg 1, "Linking...";
+    local $" = qq/" "/;
     _mysystem 
-        qq!$Config{ld} -o "$exe" ! .
-        join(" ", map qq!"$tmp/$_.o"!, @srcs) .
-        qq! $ldopts!;
+        qq!$Config{ld} -o "$exe"  "@objs" $ldopts!;
 
     if ($offset) {
         _msg 1, "Appending script...";
