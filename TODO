@@ -1,8 +1,17 @@
-Fix path manipulations to use FIle::Spec.
+Check if we actually need perlapi.h.
+
+Use MM->quote_literal instead of blind double-quoting.
+
+Always append "--" to argv, and unshift it off after perl is
+initialized. Test that we can't add extra -e options.
+
+More tests.
+
+Docs.
+
+--
 
 Fake up PerlIO_find_layer if its not available.
-
-Makefile.PL configuration.
 
 --gui, --icon
 
@@ -10,13 +19,11 @@ Option to compile in the script, using :scalar rather than :subfile.
 
 Option to set $^X.
 
-More tests.
-
-Docs.
-
 5.8-ize.
 
 static linking / ex::lib::zip
 
 SHA1 any included data and check on load.
+
+# vi:
 
