@@ -2,9 +2,15 @@
 #define _PL2EXE_H
 
 #ifdef PERL_IN_MINIPERLMAIN_C
+
+#ifdef NEED_PERLAPI_H
+#include "perlapi.h"
+#endif
+
 #undef perl_parse
 #define perl_parse pl2exe_perl_parse
-#endif
+
+#endif /* PERL_IN_MINIPERLMAIN_C */
 
 int pl2exe_perl_parse(
     PerlInterpreter* interp, 

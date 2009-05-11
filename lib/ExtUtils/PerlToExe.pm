@@ -126,7 +126,6 @@ added to C<perl_parse>'s C<argv>, after a C<-->.
 sub exemain {
     my $C = perlmain;
     $C =~ s{#include "perl.h"\n\K}{<<C}e;
-#include "perlapi.h"
 #include "pl2exe.h"
 C
     return $C;
