@@ -8,6 +8,7 @@ inc/Module/Install/Include.pm
 inc/Module/Install/Makefile.pm
 inc/Module/Install/Metadata.pm
 inc/Module/Install/Scripts.pm
+inc/Module/Install/Share.pm
 inc/Module/Install/Win32.pm
 inc/Module/Install/WriteAll.pm
 lib/ExtUtils/PerlToExe.pm
@@ -15,4 +16,13 @@ Makefile.PL
 MANIFEST			This list of files
 META.yml
 script/pl2exe
+share/pl2exe.c
+share/pl2exe.h
 t/00use.t
+t/01basic.t
+t/02pl2exe.t
+t/03build.t
+t/ctrlX
+t/layers
+t/null
+TODO
