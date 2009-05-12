@@ -2,7 +2,7 @@ package ExtUtils::PerlToExe;
 
 =head1 NAME
 
-ExtUtils::PerlToExe - Create perl executables for specific programs.
+ExtUtils::PerlToExe - Build a binary executable from a Perl script.
 
 =head1 DESCRIPTION
 
