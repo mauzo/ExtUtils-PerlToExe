@@ -229,6 +229,15 @@ four
 OUT
 },                                  "built-in and supplied ARGV";
 
+BEGIN { $t += 1 * 5 }
+
+exe_is {
+    perl    => ["-e1"],
+}, {
+    argv    => ["-e;print qq/foo/;"],
+    stdout  => "",
+},                                  "can't add -e args from argv";
+
 BEGIN { plan tests => $t }
 
 __DATA__

@@ -191,8 +191,8 @@ sub build_exe {
     my %opts = @_;
 
     $opts{type} ||= $opts{script} ? "append" : "noscript";
-    $opts{perl} ||= [];
-    $opts{argv} ||= [];
+    $opts{perl} =   [@{$opts{perl} || []}];
+    $opts{argv} =   [@{$opts{argv} || []}];
 
     ref $opts{script} eq "ARRAY"
         and $opts{script} = file @{$opts{script}};
@@ -233,6 +233,9 @@ sub build_exe {
         }
         when ("path") {
             push @{$opts{perl}}, $opts{script};
+        }
+        when ("noscript") {
+            push @{$opts{perl}}, "--";
         }
     }
 
