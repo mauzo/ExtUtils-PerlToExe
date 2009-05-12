@@ -1,9 +1,3 @@
-More tests.
-
-Docs.
-
---
-
 Consider the quoting of the command lines.
 
 Fake up PerlIO_find_layer if its not available.
