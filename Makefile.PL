@@ -50,10 +50,7 @@ sub wlog {
 }
 
 sub mysystem {
-    my $cmd = 
-        join " ",
-        map { ref() ? $$_ : MM->quote_literal($_) }
-        @_;
+    my ($cmd) = @_; 
     wlog $cmd;
 
     open my $OO, ">&", \*STDOUT;
@@ -82,16 +79,16 @@ sub trymain {
 
     my $obj = "perlmain$Config{_o}";
 
-    mysystem \$Config{cc}, "-c", "-o", $obj, $src, \$ccopts
+    mysystem qq!$Config{cc} -c -o "$obj" "$src" $ccopts!
         or return;
 
     my $exe = "a" . ($Config{_exe} || ".out");
 
-    mysystem 
-        \$Config{ld}, "-o", $exe, $obj, \$ldopts
+    mysystem qq!$Config{ld} -o "$exe" "$obj" $ldopts!
         or return;
 
-    mysystem +File::Spec->rel2abs($exe), "-MFile::Glob", "-e1"
+    $exe = File::Spec->rel2abs($exe);
+    mysystem qq!"$exe" "-MFile::Glob" "-e1"!
         or return;
 
     return 1;
