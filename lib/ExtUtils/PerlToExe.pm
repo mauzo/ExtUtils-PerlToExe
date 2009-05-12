@@ -12,8 +12,8 @@ instead, it builds a custom embedded perl interpreter that will only run
 the supplied program.
 
 Currently the binary still depends on F<libperl.so> and requires a full
-C<@INC> tree on disc, but I hope to remove that restriction once I've
-worked out how MakeMaker's C<make perl> works C<:)>.
+C<@INC> tree on disc, making this effectively a cleaner replacement for
+pl2bat.
 
 =head1 FUNCTIONS
 
@@ -53,6 +53,8 @@ sub _msg {
     my ($v, $msg) = @_;
     $Verb >= $v and warn "$msg\n";
 }
+
+=begin internals
 
 =head2 perlmain
 
@@ -110,19 +112,6 @@ sub str_to_C (_) {
         $_[0];
 }
 
-=head2 exemain I<LIST>
-
-Returns the text of perlmain.c, modified to run perl with the arguments
-passed. I<LIST> should B<not> include C<argv[0]>, as that will passed
-from C<main> when the program is invoked. This is necessary as on many
-platforms C<$^X> is calculated from e.g. F</proc/self/exe>, and ignores
-the passed C<argv[0]>.
-
-Any additional arguments passed to the resulting executable will be
-added to C<perl_parse>'s C<argv>, after a C<-->.
-
-=cut
-
 sub exemain {
     my $C = perlmain;
     $C =~ s{#include "perl.h"\n\K}{<<C}e;
@@ -139,6 +128,19 @@ sub define {
         "#define $_ $macros{$_}\n";
     } keys %macros;
 }
+
+=head2 subst_h
+
+Returns the text of perlmain.c, modified to run perl with the arguments
+passed. I<LIST> should B<not> include C<argv[0]>, as that will passed
+from C<main> when the program is invoked. This is necessary as on many
+platforms C<$^X> is calculated from e.g. F</proc/self/exe>, and ignores
+the passed C<argv[0]>.
+
+Any additional arguments passed to the resulting executable will be
+added to C<perl_parse>'s C<argv>, after a C<-->.
+
+=cut
 
 sub subst_h {
     my %opts = @_;
@@ -180,10 +182,68 @@ sub _mysystem {
     system $cmd;
 }
 
-=head1 build_exe
+=end internals
+
+=head2 build_exe I<OPTIONS>
 
 Compiles and links a version of perl that runs with the supplied
-arguments.
+arguments. I<OPTIONS> should be a set of key/value pairs. Valid options
+are
+
+=over 4
+
+=item perl
+
+An arrayref of options to pass to perl. Do not include the script or any
+arguments for C<@ARGV> here; see the C<script> and C<argv> options.
+
+=item script
+
+The script file to convert. If this is an arrayref, the array will be
+passed to L<Path::Class|Path::Class>.
+
+=item type
+
+The type of executable to create. Currently there are three types:
+
+=over 4
+
+=item noscript
+
+Don't include a script at all, just compile-in the command line options
+given.
+
+=item path
+
+Compile in the path given, so that the generated executable will always
+run that file. You probably want to make this an absolute path, as the
+function will just compile-in whatever string you specify.
+
+=item append
+
+Append the script to the executable file, and read it from there at
+runtime. The generated executable will require the
+L<PerlIO::subfile|PerlIO::subfile> module at runtime.
+
+=back
+
+=item argv
+
+An arrayref of arguments to go in @ARGV. Any arguments passed on the
+command-line will be appended to these.
+
+=item output
+
+Where to put the generated exe. Defaults to F<a.out>, like all good
+compilers.
+
+=item verbose
+
+A number from 0 to 3. Numbers greater than 0 will produce output as the
+build progresses. This will be emitted with C<warn>, so it can be caught
+using C<$SIG{__WARN__}> if necessary.
+
+=back
 
 =cut
 
@@ -284,6 +344,20 @@ sub build_exe {
 1;
 
 =head1 BUGS
+
+C<$^X> will be set to the perl that was used to generate the executable.
+If that perl is moved or removed, C<$^X> will no longer be valid in the
+executed program.
+
+B<Do not> attempt to pass C<-P> to perl. C<-P> cannot work anyway, and
+the executable will croak when it is run, but before it does it will
+execute a copy of itself as part of the C<-P> processing. The only way
+to stop the loop is to rename the executable.
+
+C<< type => "append" >> is incompatible with taint mode, as there is no way
+to securely open a filehandle on the current executable. If an exe built
+with C<< type => "append" >> finds it has started in taint mode, it will
+exit with the message "Insecure dependency in appended script".
 
 Please report bugs to <bug-ExtUtils-PerlToExe@rt.cpan.org>.
 

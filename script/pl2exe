@@ -33,16 +33,19 @@ pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE]
 
 =head1 OPTIONS
 
-        --gui       Make a GUI executable. Only on Win32.
     -h, --help      Display this help.
-        --icon      Set the icon for the exe. Only on Win32.
-    -S, --secure    SHA1 any included script.
     -T, --type      Select how to include the script:
         append      Append it to the executable (default).
         noscript    Just bake in the given options to perl.
         path        Just bake in the provided path.
     -o, --output    Output file. Defaults to F<a.out>.
     -v, --verbose   Increase verbosity.
+
+=head1 DESCRIPTION
+
+This prgram converts a Perl script into a binary executable. See
+L<ExtUtils::PerlToExe/build_exe> for a detailed description of the
+options.
 
 =cut
 
