@@ -1,15 +1,10 @@
-Check if we actually need perlapi.h.
-
-Use MM->quote_literal instead of blind double-quoting.
-
-Always append "--" to argv, and unshift it off after perl is
-initialized. Test that we can't add extra -e options.
-
 More tests.
 
 Docs.
 
 --
+
+Consider the quoting of the command lines.
 
 Fake up PerlIO_find_layer if its not available.
 
