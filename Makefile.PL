@@ -28,6 +28,8 @@ requires    "IPC::Run"              => 0;
 requires    "Data::Dump"            => 0;
 requires    "Path::Class"           => 0;
 
+test_requires   "Test::Builder"     => "0.82";
+
 install_script  "pl2exe";
 install_share;
 
