@@ -1,6 +1,8 @@
 #ifndef _PL2EXE_H
 #define _PL2EXE_H
 
+#include "p2econfig.h"
+
 #ifdef PERL_IN_MINIPERLMAIN_C
 
 #ifdef NEED_PERLAPI_H
