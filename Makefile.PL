@@ -33,15 +33,7 @@ test_requires   "Test::Builder"     => "0.82";
 install_script  "pl2exe";
 install_share;
 
-my $ccopts = ccopts;
-my $ldopts = ldopts(1);
-my $perlmain = "";
-{
-    open my $MAIN, ">", \$perlmain;
-    my $OLD = select $MAIN;
-    writemain ExtUtils::Embed::static_ext;
-    select $OLD;
-}
+auto_install;
 
 open my $LOG, ">", "config.log";
 
@@ -49,6 +41,18 @@ sub wlog {
     $LOG or return;
     local ($,, $\) = ("\n", "\n");
     print $LOG @_;
+}
+
+my $ccopts = ccopts;
+my $ldopts = ldopts(1);
+my $perlmain = "";
+{
+    open my $MAIN, ">", \$perlmain;
+    my $OLD = select $MAIN;
+    my @st = ExtUtils::Embed::static_ext;
+    wlog "STATIC_EXT: $_" for @st;
+    writemain @st;
+    select $OLD;
 }
 
 sub mysystem {
@@ -90,13 +94,12 @@ sub trymain {
         or return;
 
     $exe = File::Spec->rel2abs($exe);
-    mysystem qq!"$exe" "-MFile::Glob" "-e1"!
+    mysystem qq!"$exe" "-MFile::Glob" ! .
+        qq!"-eeval { require Win32CORE } and Win32::DomainName()"!
         or return;
 
     return 1;
 }
-
-auto_install;
 
 my $config = File::Spec->catfile(qw/share p2econfig.h/);
 open my $CONFIG, ">", $config
@@ -116,6 +119,15 @@ CHECK: {
     if (trymain $perlmain) {
         print " yes\n";
         print $CONFIG "#define NEED_PERLAPI_H\n";
+        last CHECK;
+    }
+
+    print " NO\nChecking if adding init_Win32CORE helps...";
+    wlog "Trying perlmain after adding init_Win32CORE";
+    $perlmain =~ s{newXS\("Win32CORE[^)]+\)}{init_Win32CORE(aTHX)};
+    if (trymain $perlmain) {
+        print " yes\n";
+        print $CONFIG "#define NEED_INIT_WIN32CORE\n";
         last CHECK;
     }
 
