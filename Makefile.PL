@@ -93,16 +93,22 @@ sub check {
             or die "can't write p2econfig.h: $!\n";
         print $H map "#define $_\n", @sym;
     }
-
-    my $obj = "perlmain$Config{_o}";
+    {
+        open my $H, ">", "subst.h"
+            or die "can't write subst.h: $!\n";
+    }
+    my $o = $Config{_o};
     my $inc = "-I" . File::Spec->curdir;
+    my $pl2exe_c = File::Spec->catfile("share", "pl2exe.c");
 
-    mysystem "$Config{cc} $inc -c -o $obj perlmain.c $ccopts"
+    mysystem "$Config{cc} $inc -c -o perlmain$o perlmain.c $ccopts"
+        or NO, return;
+    mysystem "$Config{cc} $inc -c -o pl2exe$o $pl2exe_c $ccopts"
         or NO, return;
 
     my $exe = "a" . ($Config{_exe} || ".out");
 
-    mysystem "$Config{ld} -o $exe $obj $ldopts"
+    mysystem "$Config{ld} -o $exe perlmain$o pl2exe$o $ldopts"
         or NO, return;
 
     $exe = File::Spec->rel2abs($exe);
@@ -136,14 +142,14 @@ auto_install;
         $argv
         and last;
 
-    die "can't work out how to initialize Win32CORE\n";
+    #die "can't work out how to initialize Win32CORE\n";
 }
 
 {
     my $config = File::Spec->catfile(qw/share p2econfig.h/);
     open my $CONFIG, ">", $config
         or die "can't create '$config': $!\n";
-    print $CONFIG map "#define $_\n", "WANT_PL2EXE", keys %define;
+    print $CONFIG map "#define $_\n", keys %define;
 }
 
 WriteAll;

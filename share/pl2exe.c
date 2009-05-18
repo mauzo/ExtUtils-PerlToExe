@@ -8,9 +8,11 @@
 #include "subst.h"
 
 static void my_xsinit(pTHX);
-
-static char         argv_buf[ARGV_BUF_LEN] = ARGV_BUF;
 static XSINIT_t     real_xsinit;
+
+#ifdef ARGC
+static char         argv_buf[ARGV_BUF_LEN] = ARGV_BUF;
+#endif
 
 #ifdef OFFSET
 XS(XS_ExtUtils_PerlToExe_fakescript);
@@ -29,10 +31,9 @@ pl2exe_perl_parse(
     int argc, char **argv, char **env
 )
 {
+#ifdef ARGC
     int i;
     char *my_argv[ARGC + argc];
-
-    real_xsinit = xsinit;
 
     my_argv[0] = argv[0];
     INIT_MY_ARGV;
@@ -45,8 +46,17 @@ pl2exe_perl_parse(
     }
 
     i += ARGC - 1;
+#else
+# define my_argv argv
+# define i argc
+#endif
+
+    real_xsinit = xsinit;
 
     return perl_parse(interp, my_xsinit, i, my_argv, env);
+
+#undef my_argv
+#undef i
 }
 
 void
@@ -59,6 +69,10 @@ my_xsinit(pTHX)
 
     ctlXgv = gv_fetchpvs("\030", GV_NOTQUAL, SVt_PV);
     ctlX   = GvSV(ctlXgv);
+
+#ifdef NEED_INIT_WIN32CORE
+    init_Win32CORE(aTHX);
+#endif
 
 #ifdef OFFSET
 
