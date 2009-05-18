@@ -33,7 +33,21 @@ test_requires   "Test::Builder"     => "0.82";
 install_script  "pl2exe";
 install_share;
 
-auto_install;
+my $ccopts = ccopts;
+my $ldopts = ldopts(1);
+my $perlmain = "";
+{
+    open my $MAIN, ">", \$perlmain;
+    my $OLD = select $MAIN;
+    writemain ExtUtils::Embed::static_ext;
+    select $OLD;
+}
+$perlmain =~ s[(#include "perl.h"\n)][$1#include "share/pl2exe.h"\n];
+{
+    open my $MAIN, ">", "perlmain.c"
+        or die "can't write perlmain.c: $!\n";
+    print $MAIN $perlmain;
+}
 
 open my $LOG, ">", "config.log";
 
@@ -43,21 +57,9 @@ sub wlog {
     print $LOG @_;
 }
 
-my $ccopts = ccopts;
-my $ldopts = ldopts(1);
-my $perlmain = "";
-{
-    open my $MAIN, ">", \$perlmain;
-    my $OLD = select $MAIN;
-    my @st = ExtUtils::Embed::static_ext;
-    wlog "STATIC_EXT: $_" for @st;
-    writemain @st;
-    select $OLD;
-}
-
 sub mysystem {
-    my ($cmd) = @_; 
-    wlog $cmd;
+    my (@cmd) = @_; 
+    wlog join " ", @cmd;
 
     open my $OO, ">&", \*STDOUT;
     open my $OE, ">&", \*STDERR;
@@ -65,7 +67,7 @@ sub mysystem {
     open STDOUT, ">&", $LOG;
     open STDERR, ">&", $LOG;
 
-    my $rv = system $cmd;
+    my $rv = system @cmd;
 
     open STDOUT, ">&", $OO;
     open STDERR, ">&", $OE;
@@ -73,66 +75,75 @@ sub mysystem {
     defined $rv and not $rv;
 }
 
-sub trymain {
-    my ($C) = @_;
+sub NO  { print "NO\n";  return;   }
+sub yes { print "yes\n"; return 1; }
 
-    my $src = "perlmain.c";
+my %define;
+
+sub check {
+    my ($msg, $sym, $argv) = @_;
+
+    my @sym = (@$sym, keys %define);
+
+    print "Checking $msg... ";
+    wlog "Checking $msg, with:", map "  $_", @sym;
 
     {
-        open my $MAIN, ">", $src;
-        print $MAIN $C;
+        open my $H, ">", "p2econfig.h"
+            or die "can't write p2econfig.h: $!\n";
+        print $H map "#define $_\n", @sym;
     }
 
     my $obj = "perlmain$Config{_o}";
+    my $inc = "-I" . File::Spec->curdir;
 
-    mysystem qq!$Config{cc} -c -o "$obj" "$src" $ccopts!
-        or return;
+    mysystem "$Config{cc} $inc -c -o $obj perlmain.c $ccopts"
+        or NO, return;
 
     my $exe = "a" . ($Config{_exe} || ".out");
 
-    mysystem qq!$Config{ld} -o "$exe" "$obj" $ldopts!
-        or return;
+    mysystem "$Config{ld} -o $exe $obj $ldopts"
+        or NO, return;
 
     $exe = File::Spec->rel2abs($exe);
-    mysystem qq!"$exe" "-MFile::Glob" ! .
-        qq!"-eeval { require Win32CORE } and Win32::DomainName()"!
-        or return;
-
-    return 1;
+    mysystem $exe, @$argv
+        or NO, return;
+    
+    $define{$_} = () for @$sym;
+    yes;
 }
 
-my $config = File::Spec->catfile(qw/share p2econfig.h/);
-open my $CONFIG, ">", $config
-    or die "can't create '$config': $!\n";
+auto_install;
 
-CHECK: {
-    print "Checking if your EU::Miniperl works...";
-    wlog "Trying perlmain without adding perlapi.h";
-    if (trymain $perlmain) {
-        print " yes\n";
-        last CHECK;
-    }
+{
+    my $argv = ["-MFile::Glob", "-e1"];
 
-    print " NO\nChecking if adding perlapi.h helps...";
-    wlog "Trying perlmain after adding perlapi.h";
-    $perlmain =~ s{(\n#include "perl.h"\n)}{$1#include "perlapi.h"\n};
-    if (trymain $perlmain) {
-        print " yes\n";
-        print $CONFIG "#define NEED_PERLAPI_H\n";
-        last CHECK;
-    }
+    check "if your EU::Miniperl works", [], $argv
+        and last;
+    check "if adding perlapi.h helps", ["NEED_PERLAPI_H"], $argv
+        and last;
 
-    print " NO\nChecking if adding init_Win32CORE helps...";
-    wlog "Trying perlmain after adding init_Win32CORE";
-    $perlmain =~ s{newXS\("Win32CORE[^)]+\)}{init_Win32CORE(aTHX)};
-    if (trymain $perlmain) {
-        print " yes\n";
-        print $CONFIG "#define NEED_INIT_WIN32CORE\n";
-        last CHECK;
-    }
-
-    print " NO\n";
     die "Your copy of ExtUtils::Miniperl doesn't appear to work properly\n";
+}
+
+{
+    defined &Win32::DomainName or last;
+    my $argv = ["-eWin32::DomainName()"];
+
+    check "if you can call builtin Win32 functions", [], $argv
+        and last;
+    check "if calling init_Win32CORE helps", ["NEED_INIT_WIN32CORE"],
+        $argv
+        and last;
+
+    die "can't work out how to initialize Win32CORE\n";
+}
+
+{
+    my $config = File::Spec->catfile(qw/share p2econfig.h/);
+    open my $CONFIG, ">", $config
+        or die "can't create '$config': $!\n";
+    print $CONFIG map "#define $_\n", "WANT_PL2EXE", keys %define;
 }
 
 WriteAll;
