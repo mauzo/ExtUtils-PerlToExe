@@ -46,6 +46,10 @@ use Data::Dump qw/dump/;
 
 my $DIST = "ExtUtils-PerlToExe";
 
+my %P2EConfig = 
+    map +(/#define (\w+)/g, 1), 
+    read_file dist_file $DIST, "p2econfig.h";
+
 # this is 'our' for the tests only
 our $Verb = 0;
 
@@ -311,6 +315,8 @@ sub build_exe {
         argv    => [@{$opts{perl}}, @{$opts{argv}}];
 
     @srcs = grep s/\.c$//, @srcs;
+    $P2EConfig{NEED_FAKE_WIN32CORE}
+        or @srcs = grep !/Win32CORE/, @srcs;
     push @srcs, qw/exemain/;
 
     my @objs;

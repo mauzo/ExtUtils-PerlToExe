@@ -121,7 +121,7 @@ BAIL_OUT "basic exe building fails"
     if grep !$_, Test::More->builder->summary;
 
 SKIP: {
-    defined &Win32::DomainName or skip "No Win32::*", 1;
+    defined &Win32::DomainName or skip "No Win32::*", 5;
     exe_is ["-eWin32::DomainName()"], ["", ""], "Win32CORE";
 }
 
