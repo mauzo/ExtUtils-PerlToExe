@@ -39,7 +39,7 @@ my $perlmain = "";
 {
     open my $MAIN, ">", \$perlmain;
     my $OLD = select $MAIN;
-    writemain ExtUtils::Embed::static_ext;
+    writemain grep !/Win32CORE/, ExtUtils::Embed::static_ext;
     select $OLD;
 }
 $perlmain =~ s[(#include "perl.h"\n)][$1#include "share/pl2exe.h"\n];
