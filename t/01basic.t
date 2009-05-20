@@ -6,7 +6,6 @@ use warnings;
 use Test::More;
 
 use ExtUtils::PerlToExe qw/:ALL/;
-use IPC::Run            qw/run/;
 use Config;
 
 my $t;

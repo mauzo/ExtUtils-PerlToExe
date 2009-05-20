@@ -24,7 +24,6 @@ requires    "PerlIO::subfile"       => 0;
 requires    "Getopt::Long"          => "2.33";
 requires    "Pod::Usage"            => 0;
 requires    "Data::Alias"           => 0;
-requires    "IPC::Run"              => 0;
 requires    "Data::Dump"            => 0;
 requires    "Path::Class"           => 0;
 
@@ -115,16 +114,26 @@ sub check {
     }
     my $o = $Config{_o};
     my $inc = "-I" . File::Spec->curdir;
-    my $pl2exe_c = File::Spec->catfile("share", "pl2exe.c");
+    my $pl2exe_c  = File::Spec->catfile("share", "pl2exe.c");
+    my $w32core_c = File::Spec->catfile("share", "Win32CORE.c");
 
     mysystem "$Config{cc} $inc -c -o perlmain$o perlmain.c $ccopts"
         or NO, return;
     mysystem "$Config{cc} $inc -c -o pl2exe$o $pl2exe_c $ccopts"
         or NO, return;
 
+    my @obj = map "$_$o", qw/perlmain pl2exe/;
+
+    if (grep /NEED_FAKE_WIN32CORE/, @sym) {
+        mysystem "$Config{cc} $inc -c -o Win32CORE$o $w32core_c $ccopts"
+            or NO, return;
+        push @obj, "Win32CORE$o";
+    }
+
     my $exe = "a" . ($Config{_exe} || ".out");
 
-    mysystem "$Config{ld} -o $exe perlmain$o pl2exe$o $ldopts"
+    local $" = " ";
+    mysystem "$Config{ld} -o $exe @obj $ldopts"
         or NO, return;
 
     $exe = File::Spec->rel2abs($exe);
@@ -161,8 +170,14 @@ if (-e $config) {
     check "if calling init_Win32CORE helps", ["NEED_INIT_WIN32CORE"],
         $argv
         and last;
+    check "if installing the XSUBs manually helps",
+        ["NEED_FAKE_WIN32CORE"], $argv
+        and last;
 
-    #die "can't work out how to initialize Win32CORE\n";
+    warn <<W
+!!! Compiled executables will not be able to call builtin Win32
+!!! functions without loading Win32.pm.
+W
 }
 
 {
