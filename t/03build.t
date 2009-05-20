@@ -117,6 +117,9 @@ exe_is ["-e1"], ["", ""],                   "-e1";
 exe_is ["-MExporter", "-e1"], ["", ""],     "nonXS module";
 exe_is ["-MFile::Glob", "-e1"], ["", ""],   "XS module";
 
+BAIL_OUT "basic exe building fails"
+    if grep !$_, Test::More->builder->summary;
+
 SKIP: {
     defined &Win32::DomainName or skip "No Win32::*", 1;
     exe_is ["-eWin32::DomainName()"], ["", ""], "Win32CORE";
