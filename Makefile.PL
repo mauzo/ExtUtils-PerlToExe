@@ -72,7 +72,23 @@ sub mysystem {
     open STDOUT, ">&", $OO;
     open STDERR, ">&", $OE;
 
-    defined $rv and not $rv;
+    unless (defined $rv) {
+        wlog "execution failed: $!.";
+        return;
+    }
+    if ($rv) {
+        wlog "command failed with " . ($rv & 127 ? do {
+            require Config;
+            my @names = reverse split " ", $Config::Config{sig_name};
+            my @nums  = reverse split " ", $Config::Config{sig_num};
+            my @sigs;
+            $sigs[$nums[$_]] = $names[$_] for 0..$#names;
+            "SIG$sigs[$rv & 127]";
+        } : ($rv >> 8)) . ".";
+
+        return;
+    }
+    return 1;
 }
 
 sub NO  { print "NO\n";  return;   }
@@ -86,7 +102,7 @@ sub check {
     my @sym = (@$sym, keys %define);
 
     print "Checking $msg... ";
-    wlog "Checking $msg, with:", map "  $_", @sym;
+    wlog "", "Checking $msg, with:", map("  $_", @sym), ".";
 
     {
         open my $H, ">", "p2econfig.h"
@@ -121,6 +137,12 @@ sub check {
 
 auto_install;
 
+my $config = File::Spec->catfile(qw/share p2econfig.h/);
+if (-e $config) {
+    wlog "Unlinking old $config.";
+    unlink $config or die "can't remove '$config': $!\n";
+}
+
 {
     my $argv = ["-MFile::Glob", "-e1"];
 
@@ -146,7 +168,6 @@ auto_install;
 }
 
 {
-    my $config = File::Spec->catfile(qw/share p2econfig.h/);
     open my $CONFIG, ">", $config
         or die "can't create '$config': $!\n";
     print $CONFIG map "#define $_\n", keys %define;
