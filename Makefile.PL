@@ -135,8 +135,6 @@ sub check {
     yes;
 }
 
-auto_install;
-
 my $config = File::Spec->catfile(qw/share p2econfig.h/);
 if (-e $config) {
     wlog "Unlinking old $config.";
