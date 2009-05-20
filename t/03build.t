@@ -111,11 +111,16 @@ sub exe_is {
     unlink $exe;
 }
 
-BEGIN { $t += 6 * 5 }
+BEGIN { $t += 7 * 5 }
 
 exe_is ["-e1"], ["", ""],                   "-e1";
 exe_is ["-MExporter", "-e1"], ["", ""],     "nonXS module";
 exe_is ["-MFile::Glob", "-e1"], ["", ""],   "XS module";
+
+SKIP: {
+    defined &Win32::DomainName or skip "No Win32::*", 1;
+    exe_is ["-eWin32::DomainName()"], ["", ""], "Win32CORE";
+}
 
 exe_is { perl => ["-e1"], output => "foo$_exe" },
     ["", ""],                               "with -o";
