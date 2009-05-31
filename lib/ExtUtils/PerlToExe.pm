@@ -36,7 +36,7 @@ use List::Util          qw/max/;
 use File::Temp          qw/tempdir/;
 use File::Slurp         qw/read_file write_file read_dir/;
 use IPC::System::Simple qw/system/;
-use File::Copy          qw/cp/;
+use File::Copy          ();
 use File::Spec::Functions   qw/devnull/;
 use Path::Class         qw/dir file/;
 use File::ShareDir      qw/dist_dir dist_file/;
@@ -251,6 +251,22 @@ using C<$SIG{__WARN__}> if necessary.
 
 =cut
 
+my %Srcs = (
+    ""                      => [qw/exemain pl2exe/],
+    NEED_FAKE_WIN32CORE     => ["Win32CORE"],
+);
+
+# arguments must be Path::Class objects
+
+sub cp {
+    my ($from, $to) = @_;
+   
+    -d $to and $to = $to->file($from->basename);
+    _msg 2, qq/cp "$from" "$to"/;
+    # File::Copy doesn't stringify properly
+    File::Copy::cp "$from", "$to";
+}
+
 sub build_exe {
     my %opts = @_;
 
@@ -304,8 +320,6 @@ sub build_exe {
     }
 
     _msg 1, "Generating source...";
-    my @srcs = read_dir dist_dir $DIST;
-    cp dist_file($DIST, $_), $tmp->file($_) for @srcs;
 
     # File::Slurp doesn't stringify objects properly
     write_file "".$tmp->file("exemain.c"), exemain;
@@ -314,10 +328,15 @@ sub build_exe {
         offset  => $offset,
         argv    => [@{$opts{perl}}, @{$opts{argv}}];
 
-    @srcs = grep s/\.c$//, @srcs;
-    $P2EConfig{NEED_FAKE_WIN32CORE}
-        or @srcs = grep !/Win32CORE/, @srcs;
-    push @srcs, qw/exemain/;
+    my @srcs = map {
+        (not length or $P2EConfig{$_})
+            ? @{$Srcs{$_}} : ()
+    } keys %Srcs;
+
+    my $dist = dir dist_dir $DIST;
+    cp $_, $tmp
+        for (grep -f, map $dist->file("$_.c"), @srcs),
+            (grep /\.h$/, $dist->children);
 
     my @objs;
     
