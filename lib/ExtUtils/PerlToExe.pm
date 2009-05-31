@@ -155,7 +155,7 @@ sub subst_h {
 
     my $ptr = 0;
 
-    my $H = define(
+    my %H = (
         INIT_MY_ARGV    => 
             "STMT_START {\n" . 
             join("\n", map {
@@ -171,13 +171,16 @@ sub subst_h {
         CTL_X           => str_to_C($^X),
     );
 
-    if ($opts{type} eq "append") {
-        $H .= define(
-            OFFSET      => $opts{offset},
-        );
+    given ($opts{type}) {
+        when ("append") {
+            $H{OFFSET} = $opts{offset};
+        }
+        when ("zip") {
+            $H{USE_ZIP} = 1;
+        }
     }
 
-    return $H;
+    return %H;
 }
 
 sub _mysystem {
@@ -254,6 +257,7 @@ using C<$SIG{__WARN__}> if necessary.
 my %Srcs = (
     ""                      => [qw/exemain pl2exe/],
     NEED_INIT_WIN32CORE     => ["Win32CORE"],
+    USE_ZIP                 => ["zip"],
 );
 
 # arguments must be Path::Class objects
@@ -321,17 +325,19 @@ sub build_exe {
 
     _msg 1, "Generating source...";
 
-    # File::Slurp doesn't stringify objects properly
-    write_file "".$tmp->file("exemain.c"), exemain;
-    write_file "".$tmp->file("subst.h"),   subst_h
+    my %subst = subst_h
         type    => $opts{type},
         offset  => $offset,
         argv    => [@{$opts{perl}}, @{$opts{argv}}];
 
-    my @srcs = map {
-        (not length or $P2EConfig{$_})
-            ? @{$Srcs{$_}} : ()
-    } keys %Srcs;
+    # File::Slurp doesn't stringify objects properly
+    write_file "".$tmp->file("exemain.c"), exemain;
+    write_file "".$tmp->file("subst.h"),   define %subst;
+
+    my @srcs = 
+        map @{$Srcs{$_}},
+        grep { not length or $P2EConfig{$_} or $subst{$_} }
+        keys %Srcs;
 
     my $dist = dir dist_dir $DIST;
     _cp $_, $tmp

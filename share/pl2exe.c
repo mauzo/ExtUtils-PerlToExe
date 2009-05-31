@@ -14,7 +14,7 @@ static XSINIT_t     real_xsinit;
 static char         argv_buf[ARGV_BUF_LEN] = ARGV_BUF;
 #endif
 
-#ifdef OFFSET
+#if defined(OFFSET) || defined(USE_ZIP)
 XS(XS_ExtUtils_PerlToExe_fakescript);
 #endif
 
@@ -74,7 +74,11 @@ my_xsinit(pTHX)
     init_Win32CORE(aTHX);
 #endif
 
-#ifdef OFFSET
+#ifdef USE_ZIP
+    pl2exe_boot_zip(aTHX);
+#endif
+
+#if defined(OFFSET) || defined(USE_ZIP)
 
     newXS("ExtUtils::PerlToExe::fakescript",
         XS_ExtUtils_PerlToExe_fakescript,
@@ -85,12 +89,18 @@ my_xsinit(pTHX)
     av_push(PL_preambleav, 
         newSVpvs("BEGIN { ExtUtils::PerlToExe::fakescript() }"));
 
+    TAINT;
+#ifdef USE_ZIP
+    TAINT_PROPER("appended zipfile");
+#else
+    TAINT_PROPER("appended script");
+#endif
+    TAINT_NOT;
+
+#ifdef OFFSET
     if (PL_preprocess)
         croak("Can't use -P with pl2exe");
-
-    TAINT;
-    TAINT_PROPER("appended script");
-    TAINT_NOT;
+#endif
 
     /*
      * We can't reopen PL_rsfp yet as it hasn't been set (the file is
@@ -103,7 +113,11 @@ my_xsinit(pTHX)
     CopFILE_free(PL_curcop);
     CopFILE_set(PL_curcop, PL_origfilename);
 
-#endif /* OFFSET */
+#endif /* OFFSET || USE_ZIP */
+
+#ifdef USE_ZIP
+    pl2exe_load_zip(aTHX_ PL_origfilename);
+#endif
 
 #ifdef CTL_X
     sv_setpv(ctlX, CTL_X);
@@ -113,7 +127,7 @@ my_xsinit(pTHX)
     real_xsinit(aTHX);
 }
 
-#ifdef OFFSET
+#if defined(OFFSET) || defined(USE_ZIP)
 
 #define PL_rsfp (PL_parser->rsfp)
 
@@ -122,6 +136,7 @@ XS(XS_ExtUtils_PerlToExe_fakescript)
     dVAR;
     dXSARGS;
 
+#ifdef OFFSET
     Perl_load_module(aTHX_ 0, newSVpvs("PerlIO::subfile"), NULL, NULL);
 
     PerlIO_close(PL_rsfp);
@@ -129,6 +144,8 @@ XS(XS_ExtUtils_PerlToExe_fakescript)
     PerlIO_seek(PL_rsfp, -OFFSET, SEEK_END);
 
     PerlIO_apply_layers(aTHX_ PL_rsfp, "r", ":subfile");
+#endif
+
 }
 
-#endif /* OFFSET */
+#endif /* OFFSET || USE_ZIP */
