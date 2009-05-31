@@ -36,7 +36,7 @@ use List::Util          qw/max/;
 use File::Temp          qw/tempdir/;
 use File::Slurp         qw/read_file write_file read_dir/;
 use IPC::System::Simple qw/system/;
-use File::Copy          ();
+use File::Copy          qw/cp/;
 use File::Spec::Functions   qw/devnull/;
 use Path::Class         qw/dir file/;
 use File::ShareDir      qw/dist_dir dist_file/;
@@ -253,12 +253,12 @@ using C<$SIG{__WARN__}> if necessary.
 
 my %Srcs = (
     ""                      => [qw/exemain pl2exe/],
-    NEED_FAKE_WIN32CORE     => ["Win32CORE"],
+    NEED_INIT_WIN32CORE     => ["Win32CORE"],
 );
 
 # arguments must be Path::Class objects
 
-sub cp {
+sub _cp {
     my ($from, $to) = @_;
    
     -d $to and $to = $to->file($from->basename);
@@ -334,7 +334,7 @@ sub build_exe {
     } keys %Srcs;
 
     my $dist = dir dist_dir $DIST;
-    cp $_, $tmp
+    _cp $_, $tmp
         for (grep -f, map $dist->file("$_.c"), @srcs),
             (grep /\.h$/, $dist->children);
 

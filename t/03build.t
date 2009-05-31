@@ -111,7 +111,7 @@ sub exe_is {
     unlink $exe;
 }
 
-BEGIN { $t += 7 * 5 }
+BEGIN { $t += 3 * 5 }
 
 exe_is ["-e1"], ["", ""],                   "-e1";
 exe_is ["-MExporter", "-e1"], ["", ""],     "nonXS module";
@@ -120,10 +120,14 @@ exe_is ["-MFile::Glob", "-e1"], ["", ""],   "XS module";
 BAIL_OUT "basic exe building fails"
     if grep !$_, Test::More->builder->summary;
 
+BEGIN { $t += 5 }
+
 SKIP: {
     defined &Win32::DomainName or skip "No Win32::*", 5;
     exe_is ["-eWin32::DomainName()"], ["", ""], "Win32CORE";
 }
+
+BEGIN { $t += 5 * 5 }
 
 exe_is { perl => ["-e1"], output => "foo$_exe" },
     ["", ""],                               "with -o";
@@ -132,6 +136,14 @@ exe_is { script => file("t", "null") },
     ["", ""],                               "empty script";
 exe_is { script => ["t", "null"] },
     ["", ""],                               "script uses Path::Class";
+exe_is {
+    script  => ["t", "null"],
+    type    => "append",
+}, ["", ""],                                "empty script -T append";
+exe_is {
+    script  => ["t", "null"],
+    type    => "path",
+}, ["", ""],                                "empty script -T path";
 
 BEGIN { $t += 3 * 5 }
 
