@@ -49,26 +49,26 @@ unlink $exe;
 BEGIN { $t += 6 * 5 }
 
 exe_is {
-    perl    => ["-eprint \$INC[-1]->isa('ExtUtils::PerlToExe::INC')"],
+    perl    => ["-eprint \$INC[0]->isa('ExtUtils::PerlToExe::INC')"],
     zip     => "t",
 }, ["1", ""],                       "-Tzip adds E:P:INC to \@INC";
 
 exe_is {
     output  => $exe,
-    perl    => ["-eprint \$INC[-1]->name"],
+    perl    => ["-eprint \$INC[0]->name"],
     zip     => "t",
 }, [$exe, ""],                      "...with correct zipfile";
 
 exe_is {
     perl    => ["-MScalar::Util=openhandle", <<'PERL'],
--eprint !!openhandle($INC[-1]->INC("04zip.t"))
+-eprint !!openhandle($INC[0]->INC("04zip.t"))
 PERL
     zip     => "t",
 }, ["1", ""],                       "EPI->INC returns a FH";
 
 exe_is {
     perl    => [<<'PERL'],
--eprint $INC[-1]->INC("04zip.t")
+-eprint $INC[0]->INC("04zip.t")
     ->isa("ExtUtils::PerlToExe::INC")
 PERL
     zip     => "t",
@@ -83,7 +83,7 @@ my $perl = do {
 exe_is {
     perl    => [<<'PERL'],
 -elocal $/; 
-print readline $INC[-1]->INC("layers");
+print readline $INC[0]->INC("layers");
 PERL
     zip     => "t",
 }, [$perl, ""],                     "...with the correct contents";

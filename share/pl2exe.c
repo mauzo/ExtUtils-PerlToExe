@@ -42,6 +42,10 @@
  *  A zipfile has been appended to the exe, and it should be prepended
  *  to @INC.
  *
+ * USE_ZIP_SCRIPT
+ *  The appended zipfile includes the script to be run as its
+ *  'script.pl' member.
+ *
  * NEED_INIT_WIN32CORE
  *  xsinit must call init_Win32CORE.
  *
@@ -69,6 +73,10 @@
 # define NEED_MY_XSINIT
 # define NEED_TAINT
 # define TAINT_TYPE "zip"
+#endif
+
+#ifdef USE_ZIP_SCRIPT
+# define NEED_PREAMBLE
 #endif
 
 #ifdef NEED_PREAMBLE
@@ -217,6 +225,10 @@ XS(XS_ExtUtils_PerlToExe_preamble)
 {
     dVAR;
     dXSARGS;
+#ifdef USE_ZIP_SCRIPT
+    SV *scriptsv;
+    IO *scriptio;
+#endif
 
 #ifdef USE_SUBFILE
     Perl_load_module(aTHX_ 0, newSVpvs("PerlIO::subfile"), NULL, NULL);
@@ -226,6 +238,18 @@ XS(XS_ExtUtils_PerlToExe_preamble)
     PerlIO_seek(PL_rsfp, -OFFSET, SEEK_END);
 
     PerlIO_apply_layers(aTHX_ PL_rsfp, "r", ":subfile");
+#endif
+
+#ifdef USE_ZIP_SCRIPT
+    scriptsv = eval_pv("$INC[0]->INC('script.pl')", 1);
+    if (!SvOK(scriptsv))
+        croak("can't find 'script.pl' in %s", PL_origfilename);
+
+    scriptio = sv_2io(scriptsv);
+    if (!scriptio || !IoIFP(scriptio))
+        croak("can't load 'script.pl' from %s", PL_origfilename);
+
+    PL_rsfp = IoIFP(scriptio);
 #endif
 
 }

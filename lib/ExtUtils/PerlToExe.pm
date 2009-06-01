@@ -185,6 +185,7 @@ sub subst_h {
         }
         when ("zip") {
             $H{USE_ZIP} = 1;
+            $opts{script} and $H{USE_ZIP_SCRIPT} = 1;
         }
     }
 
@@ -318,6 +319,11 @@ sub build_exe {
         when ("zip") {
             $zip = Archive::Zip->new;
             $zip->addTree($opts{zip}, "");
+
+            if ($opts{script}) {
+                $zip->addFile($opts{script}, "script.pl");
+                push @{$opts{perl}}, devnull;
+            }
         }
         when ("append") {
             # We supply a fake script argument of /dev/null to
@@ -344,9 +350,10 @@ sub build_exe {
     my %subst = subst_h
         type    => $opts{type},
         offset  => $offset,
-        argv    => [@{$opts{perl}}, @{$opts{argv}}];
+        argv    => [@{$opts{perl}}, @{$opts{argv}}],
+        script  => $opts{script};
 
-    _msg 3, "Writing subst.h with " . dump \%subst;
+    _msg 3, "Writing subst.h with \n" . define %subst;
 
     # File::Slurp doesn't stringify objects properly
     write_file "".$tmp->file("exemain.c"), exemain;

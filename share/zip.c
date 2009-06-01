@@ -9,10 +9,6 @@
  *    Public License or the Artistic License, as specified in perl's README
  *    file.
  *
- * For now this file (only) is therefore distributed under these terms,
- * until I can either resolve the discrepancy or find a different zip
- * implementation to steal.
- *
  * Modified for pl2exe by Ben Morrow <ben@morrow.me.uk>.
  *
  */
@@ -706,5 +702,6 @@ pl2exe_load_zip(aTHX_ const char *exe)
     if (!inc)
         croak("can't get @INC");
 
-    av_push(inc, obj);
+    av_unshift(inc, 1);
+    av_store(inc, 0, obj);
 }
