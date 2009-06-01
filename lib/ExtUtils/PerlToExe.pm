@@ -160,6 +160,9 @@ sub subst_h {
     my $ptr = 0;
 
     my %H = (
+        USE_MY_ARGV     => 1,
+        ARGC            => @argv + 1,
+        ARGV_BUF        => str_to_C(join "", map "$_\0", @argv),
         INIT_MY_ARGV    => 
             "STMT_START {\n" . 
             join("\n", map {
@@ -169,15 +172,16 @@ sub subst_h {
             } 1..@argv) .
             "\n} STMT_END",
 
-        ARGV_BUF_LEN    => $ptr + 1,
-        ARGC            => @argv + 1,
-        ARGV_BUF        => str_to_C(join "", map "$_\0", @argv),
-        CTL_X           => str_to_C($^X),
+        USE_CTRLX       => 1,
+        CTRL_X          => str_to_C($^X),
     );
 
     given ($opts{type}) {
         when ("append") {
-            $H{OFFSET} = $opts{offset};
+            %H = (%H,
+                USE_SUBFILE => 1,
+                OFFSET      => $opts{offset},
+            );
         }
         when ("zip") {
             $H{USE_ZIP} = 1;
@@ -291,7 +295,7 @@ sub build_exe {
 
     my $exe = $opts{output} // "a" . ($Config{_exe} || ".out");
 
-    $Verb = $opts{verbose} || 0;
+    $Verb = $ENV{PL2EXE_VERBOSE} || $opts{verbose} || 0;
 
     _msg 3, "Building an exe with " . dump \%opts;
 
@@ -341,6 +345,8 @@ sub build_exe {
         type    => $opts{type},
         offset  => $offset,
         argv    => [@{$opts{perl}}, @{$opts{argv}}];
+
+    _msg 3, "Writing subst.h with " . dump \%subst;
 
     # File::Slurp doesn't stringify objects properly
     write_file "".$tmp->file("exemain.c"), exemain;

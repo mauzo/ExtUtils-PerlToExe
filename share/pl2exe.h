@@ -19,4 +19,4 @@ int pl2exe_perl_parse(
     XSINIT_t xsinit, 
     int argc, char **argv, char **env);
 
-#endif
+#endif /* _PL2EXE_H */

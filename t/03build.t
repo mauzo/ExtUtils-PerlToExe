@@ -13,7 +13,7 @@ my $_exe = ($Config{_exe} || ".out");
 
 my $t;
 
-BEGIN { $t += 6 + 2 * 5 }
+BEGIN { $t += 6 + 3 * 5 }
 
 build_ok { perl => ["-e1"] },               "-e1 builds OK";
 ok -x "a$_exe",                             "...and is executable";
@@ -23,6 +23,8 @@ unlink "a$_exe";
 
 exe_is ["-MExporter", "-e1"], ["", ""],     "nonXS module";
 exe_is ["-MFile::Glob", "-e1"], ["", ""],   "XS module";
+
+exe_is ["-eprint 'foo'"], ["foo", ""],      "my_argv actually used";
 
 BAIL_OUT "basic exe building fails"
     if grep !$_, Test::More->builder->summary;

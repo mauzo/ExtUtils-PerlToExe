@@ -7,16 +7,92 @@
 #include "pl2exe.h"
 #include "subst.h"
 
+/* 
+ * FEATURE MACROS
+ *
+ * USE_* are defined in subst.h. They indicate features pl2exe is
+ * requesting of the executable.
+ *
+ * NEED_* are defined in p2econfig.h, or here. They indicate features
+ * that must be enabled in order to provide the USE_* features, or to
+ * work around OS-specific problems.
+ *
+ * USE_MY_ARGV
+ *  Indicates that a modified argv must be passed to perl_parse.
+ *  Requires the following to also be defined:
+ *      ARGV_BUF        a string constant holding the new arguments,
+ *                      used to initialize argv_buf,
+ *      ARGV_BUF_LEN    the length of ARGV_BUF,
+ *      ARGC            the number of arguments in ARGV_BUF,
+ *      INIT_MY_ARGV    a C statement that initializes my_argv with
+ *                      pointers into argv_buf.
+ *
+ * USE_CTRLX
+ *  Indicates that PL_origfilename should be reset to $^X, and $^X set
+ *  to
+ *      CTRL_X          the new value for $^X.
+ *
+ * USE_SUBFILE
+ *  Indicates that a perl script has been appended to the exe, and it
+ *  should be loaded using :subfile. Requires
+ *      OFFSET          the offset from the end of the exe of the start
+ *                      of the appended script.
+ *
+ * USE_ZIP
+ *  A zipfile has been appended to the exe, and it should be prepended
+ *  to @INC.
+ *
+ * NEED_INIT_WIN32CORE
+ *  xsinit must call init_Win32CORE.
+ *
+ * NEED_MY_XSINIT
+ *  We have work to do at xsinit time, so replace perl's xsinit with out
+ *  own.
+ *
+ * NEED_PREAMBLE
+ *  We have work to do at PL_preambleav time, so install an XSUB and
+ *  call it from PL_preambleav.
+ *
+ * NEED_TAINT
+ *  We are loading code that has been appended to the exe, so bail out
+ *  if we are in taint mode. This requires
+ *      TAINT_TYPE      a string describing what has been appended.
+ */
+
+#ifdef USE_SUBFILE
+# define NEED_PREAMBLE
+# define NEED_TAINT
+# define TAINT_TYPE "script"
+#endif
+
+#ifdef USE_ZIP
+# define NEED_MY_XSINIT
+# define NEED_TAINT
+# define TAINT_TYPE "zip"
+#endif
+
+#ifdef NEED_PREAMBLE
+# define NEED_MY_XSINIT
+#endif
+
+#ifdef USE_CTRLX
+# define NEED_MY_XSINIT
+#endif
+
+#ifdef NEED_MY_XSINIT
 static void my_xsinit(pTHX);
 static XSINIT_t     real_xsinit;
-
-#ifdef ARGC
-static char         argv_buf[ARGV_BUF_LEN] = ARGV_BUF;
 #endif
 
-#if defined(OFFSET) || defined(USE_ZIP)
-XS(XS_ExtUtils_PerlToExe_fakescript);
+#ifdef USE_MY_ARGV
+static char         argv_buf[sizeof(ARGV_BUF)] = ARGV_BUF;
 #endif
+
+#ifdef NEED_PREAMBLE
+XS(XS_ExtUtils_PerlToExe_preamble);
+#endif
+
+#define PL_rsfp (PL_parser->rsfp)
 
 /*
  * This is our main hook into perl startup. We rewrite argv, then call
@@ -31,8 +107,8 @@ pl2exe_perl_parse(
     int argc, char **argv, char **env
 )
 {
-#ifdef ARGC
-    int i;
+#ifdef USE_MY_ARGV
+    int   my_argc;
     char *my_argv[ARGC + argc];
 
     my_argv[0] = argv[0];
@@ -41,34 +117,46 @@ pl2exe_perl_parse(
     /* argv has an extra "\\0" on the end, so we can go all 
        the way up to argv[argc] */
 
-    for (i = 0; i < argc; i++) {
-        my_argv[i + ARGC] = argv[i + 1];
+    for (my_argc = 0; my_argc < argc; my_argc++) {
+        my_argv[my_argc + ARGC] = argv[my_argc + 1];
     }
 
-    i += ARGC - 1;
+    my_argc += ARGC - 1;
 #else
 # define my_argv argv
-# define i argc
+# define my_argc argc
 #endif
 
+#ifdef NEED_MY_XSINIT
     real_xsinit = xsinit;
+#else
+# define my_xsinit xsinit
+#endif
 
-    return perl_parse(interp, my_xsinit, i, my_argv, env);
+    return perl_parse(interp, my_xsinit, my_argc, my_argv, env);
 
 #undef my_argv
-#undef i
+#undef my_argc
+#undef my_xsinit
 }
+
+#ifdef NEED_MY_XSINIT
 
 void
 my_xsinit(pTHX)
 {
     dVAR;
     static const char file[] = __FILE__;
-    GV *ctlXgv;
-    SV *ctlX;
 
-    ctlXgv = gv_fetchpvs("\030", GV_NOTQUAL, SVt_PV);
-    ctlX   = GvSV(ctlXgv);
+#ifdef USE_CTRLX
+    GV *ctrlXgv;
+    SV *ctrlX;
+#endif
+
+#ifdef USE_SUBFILE
+    if (PL_preprocess)
+        croak("Can't use -P with pl2exe");
+#endif
 
 #ifdef NEED_INIT_WIN32CORE
     init_Win32CORE(aTHX);
@@ -78,29 +166,26 @@ my_xsinit(pTHX)
     pl2exe_boot_zip(aTHX);
 #endif
 
-#if defined(OFFSET) || defined(USE_ZIP)
-
-    newXS("ExtUtils::PerlToExe::fakescript",
-        XS_ExtUtils_PerlToExe_fakescript,
+#ifdef NEED_PREAMBLE
+    newXS("ExtUtils::PerlToExe::preamble",
+        XS_ExtUtils_PerlToExe_preamble,
         file);
 
     if (!PL_preambleav)
         PL_preambleav = newAV();
     av_push(PL_preambleav, 
-        newSVpvs("BEGIN { ExtUtils::PerlToExe::fakescript() }"));
+        newSVpvs("BEGIN { ExtUtils::PerlToExe::preamble() }"));
+#endif
 
+#ifdef NEED_TAINT
     TAINT;
-#ifdef USE_ZIP
-    TAINT_PROPER("appended zipfile");
-#else
-    TAINT_PROPER("appended script");
-#endif
+    TAINT_PROPER("appended " TAINT_TYPE);
     TAINT_NOT;
-
-#ifdef OFFSET
-    if (PL_preprocess)
-        croak("Can't use -P with pl2exe");
 #endif
+
+#ifdef USE_CTRLX
+    ctrlXgv = gv_fetchpvs("\030", GV_NOTQUAL, SVt_PV);
+    ctrlX   = GvSV(ctrlXgv);
 
     /*
      * We can't reopen PL_rsfp yet as it hasn't been set (the file is
@@ -109,34 +194,31 @@ my_xsinit(pTHX)
      * called on it.
      */
 
-    PL_origfilename = savepv(SvPV_nolen(ctlX));
+    PL_origfilename = savepv(SvPV_nolen(ctrlX));
     CopFILE_free(PL_curcop);
     CopFILE_set(PL_curcop, PL_origfilename);
 
-#endif /* OFFSET || USE_ZIP */
+    sv_setpv(ctrlX, CTRL_X);
+    SvTAINTED_on(ctrlX);
+#endif
 
 #ifdef USE_ZIP
     pl2exe_load_zip(aTHX_ PL_origfilename);
 #endif
 
-#ifdef CTL_X
-    sv_setpv(ctlX, CTL_X);
-    SvTAINTED_on(ctlX);
-#endif
-
     real_xsinit(aTHX);
 }
 
-#if defined(OFFSET) || defined(USE_ZIP)
+#endif /* NEED_MY_XSINIT */
 
-#define PL_rsfp (PL_parser->rsfp)
+#ifdef NEED_PREAMBLE
 
-XS(XS_ExtUtils_PerlToExe_fakescript)
+XS(XS_ExtUtils_PerlToExe_preamble)
 {
     dVAR;
     dXSARGS;
 
-#ifdef OFFSET
+#ifdef USE_SUBFILE
     Perl_load_module(aTHX_ 0, newSVpvs("PerlIO::subfile"), NULL, NULL);
 
     PerlIO_close(PL_rsfp);
@@ -148,4 +230,4 @@ XS(XS_ExtUtils_PerlToExe_fakescript)
 
 }
 
-#endif /* OFFSET || USE_ZIP */
+#endif /* NEED_PREAMBLE */
