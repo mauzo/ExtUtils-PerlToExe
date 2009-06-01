@@ -32,6 +32,8 @@ use Config;
 use ExtUtils::Miniperl  ();
 use ExtUtils::Embed     ();
 
+use Fcntl               qw/:seek/;
+
 use List::Util          qw/max/;
 use File::Temp          qw/tempdir/;
 use File::Slurp         qw/read_file write_file read_dir/;
@@ -41,6 +43,8 @@ use File::Spec::Functions   qw/devnull/;
 use Path::Class         qw/dir file/;
 use File::ShareDir      qw/dist_dir dist_file/;
 use Data::Alias;
+
+use Archive::Zip        qw/:ERROR_CODES/;
 
 use Data::Dump qw/dump/;
 
@@ -300,9 +304,13 @@ sub build_exe {
     };
     my $ldopts = ExtUtils::Embed::ldopts(1);
 
-    my ($SCRP, $offset);
+    my ($SCRP, $offset, $zip);
 
     given ($opts{type}) {
+        when ("zip") {
+            $zip = Archive::Zip->new;
+            $zip->addTree($opts{script}, "");
+        }
         when ("append") {
             # We supply a fake script argument of /dev/null to
             # perl_parse, then fixup PL_rsfp and PL_scriptname in
@@ -359,15 +367,34 @@ sub build_exe {
     _mysystem 
         qq!$Config{ld} -o "$exe"  "@objs" $ldopts!;
 
-    if ($offset) {
-        _msg 1, "Appending script...";
-        _msg 2, qq/cat "$opts{script}" >> "$exe"/;
+    open my $OUT, "+<:raw", $exe
+        or die "can't append to '$exe': $!\n";
+    seek $OUT, 0, SEEK_END
+        or die "can't append to '$exe': $!\n";
 
-        open my $OUT, ">>:raw", $exe
-                            or die "can't append to '$exe': $!\n";
-        cp $SCRP, $OUT;
-        close $OUT          or die "can't write '$exe': $!\n";
+    given ($opts{type}) {
+        when ("append") {
+            _msg 1, "Appending script...";
+            _msg 2, qq/cat "$opts{script}" >> "$exe"/;
+
+            cp $SCRP, $OUT;
+        }
+        when ("zip") {
+            _msg 1, "Appending zipfile...";
+            _msg 2, qq/zip -r - "$opts{script}" >> "$exe"/;
+
+            for ($zip->members) {
+                _msg 3, sprintf "path: %s, file: %s",
+                    $_->fileName, $_->externalFileName;
+            }
+
+            $zip->writeToFileHandle($OUT, 1) == AZ_OK
+                or die "writing zipfile failedi\n";
+        }
     }
+
+    close $OUT;
+    chmod 0755, $exe;
 
     return 1;
 }
