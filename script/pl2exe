@@ -23,12 +23,13 @@ GetOptions \%opts, qw{
     output|o=s
     verbose|v+
     type|T=s
+    zip|Z=s
 } or pod2usage;
 $opts{help} and pod2usage 1;
 
 =head1 SYNOPSIS
 
-pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE] 
+pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE] [-Z|--zip DIR]
     [SCRIPT] [ -- PERL OPTIONS [ -- ARGV ] ]
 
 =head1 OPTIONS
@@ -38,6 +39,7 @@ pl2exe [-o|--output EXE] [-v|--verbose] [-T|--type TYPE]
         append      Append it to the executable (default).
         noscript    Just bake in the given options to perl.
         path        Just bake in the provided path.
+    -Z, --zip       Directory to zip and include.
     -o, --output    Output file. Defaults to F<a.out>.
     -v, --verbose   Increase verbosity.
 

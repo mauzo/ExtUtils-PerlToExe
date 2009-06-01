@@ -31,7 +31,7 @@ sub p2e_is {
 }
 
 {
-    BEGIN { $t += 6 }
+    BEGIN { $t += 10 }
 
     p2e_is [qw/foo/], 
         { script => "foo", perl => [] },
@@ -56,6 +56,22 @@ sub p2e_is {
     p2e_is [qw/-- -- -v/],
         { perl => [], argv => ["-v"] },
         "pass -v to argv";
+
+    p2e_is [qw/-T path foo/],
+        { script => "foo", type => "path", perl => [] },
+        "-T takes an argument";
+
+    p2e_is [qw/-Tpath foo/],
+        { script => "foo", type => "path", perl => [] },
+        "...which can be bundled";
+
+    p2e_is [qw/-Z dir foo/],
+        { script => "foo", zip => "dir", perl => [] },
+        "-Z takes an argument";
+
+    p2e_is [qw/-Z dir -- -e1/],
+        { zip => "dir", perl => ["-e1"] },
+        "-Z can be used with no script";
 }
 
 

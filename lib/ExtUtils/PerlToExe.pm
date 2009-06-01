@@ -278,7 +278,11 @@ sub _cp {
 sub build_exe {
     my %opts = @_;
 
-    $opts{type} ||= $opts{script} ? "append" : "noscript";
+    unless ($opts{type}) {
+        $opts{type} = "noscript";
+        $opts{script}   and $opts{type} = "append";
+        $opts{zip}      and $opts{type} = "zip";
+    }
     $opts{perl} =   [@{$opts{perl} || []}];
     $opts{argv} =   [@{$opts{argv} || []}];
 
@@ -309,7 +313,7 @@ sub build_exe {
     given ($opts{type}) {
         when ("zip") {
             $zip = Archive::Zip->new;
-            $zip->addTree($opts{script}, "");
+            $zip->addTree($opts{zip}, "");
         }
         when ("append") {
             # We supply a fake script argument of /dev/null to
@@ -381,7 +385,7 @@ sub build_exe {
         }
         when ("zip") {
             _msg 1, "Appending zipfile...";
-            _msg 2, qq/zip -r - "$opts{script}" >> "$exe"/;
+            _msg 2, qq/zip -r - "$opts{zip}" >> "$exe"/;
 
             for ($zip->members) {
                 _msg 3, sprintf "path: %s, file: %s",
