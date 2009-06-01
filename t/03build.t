@@ -13,9 +13,14 @@ my $_exe = ($Config{_exe} || ".out");
 
 my $t;
 
-BEGIN { $t += 3 * 5 }
+BEGIN { $t += 6 + 2 * 5 }
 
-exe_is ["-e1"], ["", ""],                   "-e1";
+build_ok { perl => ["-e1"] },               "-e1 builds OK";
+ok -x "a$_exe",                             "...and is executable";
+run_is "a$_exe", ["", ""],                  "-e1";
+
+unlink "a$_exe";
+
 exe_is ["-MExporter", "-e1"], ["", ""],     "nonXS module";
 exe_is ["-MFile::Glob", "-e1"], ["", ""],   "XS module";
 
