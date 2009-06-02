@@ -81,7 +81,7 @@ sub cp { write_file $_[1], read_file $_[0] }
 }
 
 cp catfile("share", $_), config($_)
-    for qw/pl2exe.h pl2exe.c Win32CORE.c/;
+    for qw/pl2exe.h pl2exe.c Win32CORE.c perlio.c zip.c/;
 write_file config($_), ""
     for qw/p2econfig.h subst.h/;
 
@@ -284,6 +284,18 @@ check "if your EU::Miniperl works",
 !!! Compiled executables will not be able to call builtin Win32
 !!! functions without loading Win32.pm.
 W
+}
+
+{
+    my @srcs = (@{$P2E{srcs}}, "zip");
+    check "if you can link PerlIO_find_layer", \@srcs, ["-e1"]
+        and last;
+
+    check "if we can fake it", [@srcs, "perlio"], ["-e1"]
+        and push @{$P2E{srcs}}, "perlio"
+        and last;
+
+    die "Can't link PerlIO_find_layer\n";
 }
 
 write_file 
