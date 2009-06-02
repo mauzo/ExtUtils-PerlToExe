@@ -246,7 +246,7 @@ int
 main(int argc, char **argv)
 {
     PerlInterpreter *my_perl;
-    (void)xsinit(my_perl);
+    (void)xsinit(aTHX);
     return 0;
 }
 TRY
