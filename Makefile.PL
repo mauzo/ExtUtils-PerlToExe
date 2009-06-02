@@ -4,9 +4,13 @@ use warnings;
 use strict;
 
 use Config;
-use ExtUtils::Embed     qw/ccopts ldopts/;
-use ExtUtils::Miniperl  qw/writemain/;
-use File::Spec;
+use ExtUtils::Embed         qw/ccopts ldopts/;
+use ExtUtils::Miniperl      qw/writemain/;
+use File::Spec::Functions   qw/curdir catfile rel2abs updir/;
+use Data::Dumper;
+use File::Remove            qw/rm/;
+
+include "File::Remove";
 
 name        "ExtUtils-PerlToExe";
 all_from    "lib/ExtUtils/PerlToExe.pm";
@@ -21,34 +25,65 @@ requires    "File::Copy"            => 0;
 requires    "File::Spec"            => 0;
 requires    "File::ShareDir"        => 0;
 requires    "PerlIO::subfile"       => 0;
+requires    "PerlIO::gzip"          => 0;
 requires    "Getopt::Long"          => "2.33";
 requires    "Pod::Usage"            => 0;
 requires    "Data::Alias"           => 0;
 requires    "Data::Dump"            => 0;
 requires    "Path::Class"           => 0;
+requires    "Archive::Zip"          => 0;
 
 test_requires   "Test::Builder"     => "0.82";
 
 install_script  "pl2exe";
 install_share;
 
-my $ccopts = ccopts;
-my $ldopts = ldopts(1);
-my $perlmain = "";
-{
-    open my $MAIN, ">", \$perlmain;
-    my $OLD = select $MAIN;
-    writemain grep !/Win32CORE/, ExtUtils::Embed::static_ext;
-    select $OLD;
-}
-$perlmain =~ s[(#include "perl.h"\n)][$1#include "share/pl2exe.h"\n];
-{
-    open my $MAIN, ">", "perlmain.c"
-        or die "can't write perlmain.c: $!\n";
-    print $MAIN $perlmain;
+my %P2E = (
+    ccopts  => ccopts,
+    ldopts  => ldopts(1),
+    _exe    => ($Config{_exe} || ".out"),
+    include => "-I" . curdir,
+    define  => {},
+    srcs    => ["exemain", "pl2exe"],
+);
+
+open my $LOG, ">", "config.log" or die "can't write config.log: $!\n";
+rm \1, "config";
+mkdir "config" or die "can't mkdir config: $!\n";
+
+sub config { catfile "config", $_[0] }
+
+sub write_file {
+    my ($file, $data) = @_;
+
+    open my $FILE, ">", $file
+        or die "can't write $file: $!\n";
+    print $FILE $data;
+    close $FILE or die "can't write $file: $!\n";
 }
 
-open my $LOG, ">", "config.log";
+sub read_file {
+    local $/ = undef;
+    open my $FILE, "<", $_[0]
+        or die "can't read $_[0]: $!\n";
+    <$FILE>;
+}
+
+sub cp { write_file $_[1], read_file $_[0] }
+
+{
+    open my $MAIN, ">", \(my $perlmain = "");
+    my $OLD = select $MAIN;
+    writemain ExtUtils::Embed::static_ext;
+    select $OLD;
+    $perlmain =~ s[(#include "perl.h"\n)][$1#include "pl2exe.h"\n];
+    write_file config("exemain.c"), $perlmain;
+}
+
+cp catfile("share", $_), config($_)
+    for qw/pl2exe.h pl2exe.c Win32CORE.c/;
+write_file config($_), ""
+    for qw/p2econfig.h subst.h/;
 
 sub wlog {
     $LOG or return;
@@ -59,6 +94,8 @@ sub wlog {
 sub mysystem {
     my (@cmd) = @_; 
     wlog join " ", @cmd;
+
+    @cmd == 1 and $cmd[0] =~ s/\n//g;
 
     open my $OO, ">&", \*STDOUT;
     open my $OE, ">&", \*STDERR;
@@ -90,88 +127,157 @@ sub mysystem {
     return 1;
 }
 
-sub NO  { print "NO\n";  return;   }
-sub yes { print "yes\n"; return 1; }
+sub NO  { print "NO\n";  chdir updir; return;   }
+sub yes { print "yes\n"; chdir updir; return 1; }
 
-my %define;
+sub ddump {
+    my ($name, $val) = @_;
+    my $D = Data::Dumper->new([$val], ["*$name"]);
+    $D->Indent(1);
+    $D->Quotekeys(0);
+    $D->Dump;
+}
 
 sub check {
-    my ($msg, $sym, $argv) = @_;
+    my ($msg, $srcs, $argv, $extradef) = @_;
 
-    my @sym = (@$sym, keys %define);
+    chdir "config";
 
-    print "Checking $msg... ";
-    wlog "", "Checking $msg, with:", map("  $_", @sym), ".";
-
+    my $define;
     {
-        open my $H, ">", "p2econfig.h"
-            or die "can't write p2econfig.h: $!\n";
-        print $H map "#define $_\n", @sym;
-    }
-    {
-        open my $H, ">", "subst.h"
-            or die "can't write subst.h: $!\n";
+        $extradef and local $P2E{define}{$extradef} = 1;
+
+        print "Checking $msg... ";
+        wlog "", "Checking $msg, with:", ddump P2E => \%P2E;
+
+        $define = join " ", map "-D$_", keys %{$P2E{define}};
     }
     my $o = $Config{_o};
-    my $inc = "-I" . File::Spec->curdir;
-    my $pl2exe_c  = File::Spec->catfile("share", "pl2exe.c");
-    my $w32core_c = File::Spec->catfile("share", "Win32CORE.c");
 
-    mysystem "$Config{cc} $inc -c -o perlmain$o perlmain.c $ccopts"
-        or NO, return;
-    mysystem "$Config{cc} $inc -c -o pl2exe$o $pl2exe_c $ccopts"
-        or NO, return;
-
-    my @obj = map "$_$o", qw/perlmain pl2exe/;
-
-    if (grep /NEED_FAKE_WIN32CORE/, @sym) {
-        mysystem "$Config{cc} $inc -c -o Win32CORE$o $w32core_c $ccopts"
-            or NO, return;
-        push @obj, "Win32CORE$o";
+    for (@$srcs) {
+        mysystem <<CMD or NO, return;
+$Config{cc} $define $P2E{include} -c -o $_$o $_.c $P2E{ccopts}
+CMD
     }
 
-    my $exe = "a" . ($Config{_exe} || ".out");
+    my @obj = map "$_$o", @$srcs;
+    my $exe = "a$P2E{_exe}";
 
     local $" = " ";
-    mysystem "$Config{ld} -o $exe @obj $ldopts"
-        or NO, return;
+    mysystem <<CMD or NO, return;
+$Config{ld} $P2E{ldout}$exe @obj $P2E{ldopts}
+CMD
 
-    $exe = File::Spec->rel2abs($exe);
-    mysystem $exe, @$argv
-        or NO, return;
-    
-    $define{$_} = () for @$sym;
+    $exe = rel2abs $exe;
+    mysystem $exe, @$argv or NO, return;
+   
+    $extradef and $P2E{define}{$extradef} = 1;
     yes;
 }
 
-my $config = File::Spec->catfile(qw/share p2econfig.h/);
-if (-e $config) {
-    wlog "Unlinking old $config.";
-    unlink $config or die "can't remove '$config': $!\n";
+sub try {
+    my ($c) = @_;
+    write_file config("try.c"), $c;
+    wlog "", "Creating config/try.c:", $c;
+}
+
+CHECK: {
+    try <<TRY;
+int
+main(int argc, char **argv)
+{
+    return 0;
+}
+TRY
+
+    for ("-o ", "/out:") {
+        $P2E{ldout} = $_;
+        check "if your linker uses '$_'", ["try"], []
+            and last CHECK;
+    }
+
+    die "I can't figure out how to build an executable!\n";
+}
+
+my $perl_h = <<H;
+#include "EXTERN.h"
+#define PERL_IN_MINIPERLMAIN_C
+#include "perl.h"
+#include "pl2exe.h"
+H
+
+{
+    try <<TRY;
+$perl_h
+
+static PerlInterpreter *my_perl;
+
+int
+main(int argc, char **argv) {
+    my_perl = perl_alloc();
+    if (PL_do_undump)
+        return 1;
+    return 0;
+}
+TRY
+    
+    check "if you can link exported PL_* variables", ["try"], []
+        and last;
+
+    check "if perlapi.h helps", ["try"], [], "NEED_PERLAPI_H"
+        and last;
+
+    die "I can't link to exported PL_* variables\n";
 }
 
 {
-    my $argv = ["-MFile::Glob", "-e1"];
+    try <<TRY;
+$perl_h
 
-    check "if your EU::Miniperl works", [], $argv
-        and last;
-    check "if adding perlapi.h helps", ["NEED_PERLAPI_H"], $argv
-        and last;
-
-    die "Your copy of ExtUtils::Miniperl doesn't appear to work properly\n";
+static const char *
+xsinit(pTHX)
+{
+    PERL_UNUSED_CONTEXT;
+    const char file[] = __FILE__;
+    return file;
 }
+
+int
+main(int argc, char **argv)
+{
+    PerlInterpreter *my_perl;
+    (void)xsinit(my_perl);
+    return 0;
+}
+TRY
+
+    check "if your compiler can cope with PERL_UNUSED_CONTEXT", 
+        ["try"], []
+        and last;
+
+    check "if #defining it out helps", ["try"], [], "NEED_NO_PUC"
+        and last;
+
+    die "I can't make your compiler accept PERL_UNUSED_CONTEXT.\n";
+}
+
+check "if your EU::Miniperl works", 
+    $P2E{srcs}, ["-MFile::Glob", "-e1"]
+    or die "Your ExtUtils::Miniperl doesn't appear to work properly\n";
 
 {
     defined &Win32::DomainName or last;
-    my $argv = ["-eWin32::DomainName()"];
+    my @args = ($P2E{srcs}, ["-eWin32::DomainName()"]);
 
-    check "if you can call builtin Win32 functions", [], $argv
+    check "if you can call builtin Win32 functions", @args
         and last;
-    check "if calling init_Win32CORE helps", ["NEED_INIT_WIN32CORE"],
-        $argv
+
+    check "if calling init_Win32CORE helps", @args,
+        "NEED_INIT_WIN32CORE"
         and last;
-    check "if installing the XSUBs manually helps",
-        ["NEED_FAKE_WIN32CORE"], $argv
+
+    push @{$P2E{srcs}}, "Win32CORE";
+    check "if installing the XSUBs manually helps", @args
         and last;
 
     warn <<W
@@ -180,10 +286,8 @@ if (-e $config) {
 W
 }
 
-{
-    open my $CONFIG, ">", $config
-        or die "can't create '$config': $!\n";
-    print $CONFIG map "#define $_\n", keys %define;
-}
+write_file 
+    catfile(qw/lib ExtUtils PerlToExe config.pl/), 
+    ddump("ExtUtils::PerlToExe::P2EConfig" => \%P2E) . "\n1;\n";
 
 WriteAll;

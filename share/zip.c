@@ -513,7 +513,7 @@ findfile (HV *self, struct cache *aswas, PerlIO *fp, SV *file)
 #endif
 
 static SV *
-zip_new(aTHX_ const char *file)
+zip_new(pTHX_ const char *file)
 {
     HV     *stash = gv_stashpv(CLASSNAME, 1);
     HV     *self;
@@ -680,7 +680,7 @@ XS(XS_ExtUtils_PerlToExe_INC_INC)
 }
 
 void
-pl2exe_boot_zip(aTHX_)
+pl2exe_boot_zip(pTHX)
 {
     char* file = __FILE__;
 
@@ -689,12 +689,12 @@ pl2exe_boot_zip(aTHX_)
 }
 
 void
-pl2exe_load_zip(aTHX_ const char *exe)
+pl2exe_load_zip(pTHX_ const char *exe)
 {
     SV *obj;
     AV *inc;
 
-    obj = zip_new(exe);
+    obj = zip_new(aTHX_ exe);
     if (!obj)
         croak("can't read included zipfile");
 

@@ -34,25 +34,26 @@ use ExtUtils::Embed     ();
 
 use Fcntl               qw/:seek/;
 
-use List::Util          qw/max/;
-use File::Temp          qw/tempdir/;
-use File::Slurp         qw/read_file write_file read_dir/;
-use IPC::System::Simple qw/system/;
-use File::Copy          qw/cp/;
-use File::Spec::Functions   qw/devnull/;
+use Cwd                 qw/cwd/;
 use Path::Class         qw/dir file/;
+use File::Spec::Functions   qw/devnull curdir/;
+use File::Temp          qw/tempdir/;
+use File::Copy          qw/cp/;
+use File::Slurp         qw/read_file write_file read_dir/;
 use File::ShareDir      qw/dist_dir dist_file/;
+
+use List::Util          qw/max/;
 use Data::Alias;
-
-use Archive::Zip        qw/:ERROR_CODES/;
-
 use Data::Dump qw/dump/;
+
+use IPC::System::Simple qw/system/;
+use Archive::Zip        qw/:ERROR_CODES/;
 
 my $DIST = "ExtUtils-PerlToExe";
 
-my %P2EConfig = 
-    map +(/#define (\w+)/g, 1), 
-    read_file dist_file $DIST, "p2econfig.h";
+our %P2EConfig;
+# require always takes /-separated paths
+require "ExtUtils/PerlToExe/config.pl";
 
 # this is 'our' for the tests only
 our $Verb = 0;
@@ -264,8 +265,6 @@ using C<$SIG{__WARN__}> if necessary.
 =cut
 
 my %Srcs = (
-    ""                      => [qw/exemain pl2exe/],
-    NEED_INIT_WIN32CORE     => ["Win32CORE"],
     USE_ZIP                 => ["zip"],
 );
 
@@ -294,24 +293,18 @@ sub build_exe {
     ref $opts{script} eq "ARRAY"
         and $opts{script} = file @{$opts{script}};
 
-    my $exe = $opts{output} // "a" . ($Config{_exe} || ".out");
+    my $exe = $opts{output} // "a" . $P2EConfig{_exe};
+    $exe = file($exe)->absolute;
 
     $Verb = $ENV{PL2EXE_VERBOSE} || $opts{verbose} || 0;
 
     _msg 3, "Building an exe with " . dump \%opts;
 
-    my $tmp = dir tempdir CLEANUP => 1;
+    my $tmp = dir tempdir CLEANUP => ! !$ENV{PL2EXE_NO_CLEANUP};
+    _msg 3, "Using tempdir $tmp";
 
-    # This is possibly the nastiest interface I have ever seen :).
-    # ccopts prints to STDOUT if we're running under -e; ldopts prints
-    # to STDOUT if it doesn't get any arguments.
-
-    my $ccopts = do {
-        no warnings "redefine";
-        local *ExtUtils::Embed::is_cmd = sub { 0 };
-        ExtUtils::Embed::ccopts;
-    };
-    my $ldopts = ExtUtils::Embed::ldopts(1);
+    my $ccopts = $P2EConfig{ccopts};
+    my $ldopts = $P2EConfig{ldopts};
 
     my ($SCRP, $offset, $zip);
 
@@ -347,6 +340,9 @@ sub build_exe {
 
     _msg 1, "Generating source...";
 
+    my $oldcwd = cwd;
+    chdir $tmp;
+
     my %subst = subst_h
         type    => $opts{type},
         offset  => $offset,
@@ -355,14 +351,16 @@ sub build_exe {
 
     _msg 3, "Writing subst.h with \n" . define %subst;
 
-    # File::Slurp doesn't stringify objects properly
-    write_file "".$tmp->file("exemain.c"), exemain;
-    write_file "".$tmp->file("subst.h"),   define %subst;
+    write_file "exemain.c",     exemain;
+    write_file "subst.h",       define %subst;
+    write_file "p2econfig.h",   define %{$P2EConfig{define}};
 
-    my @srcs = 
+    my @srcs = (
+        @{$P2EConfig{srcs}},
         map @{$Srcs{$_}},
-        grep { not length or $P2EConfig{$_} or $subst{$_} }
-        keys %Srcs;
+            grep $subst{$_},
+            keys %Srcs,
+    );
 
     my $dist = dir dist_dir $DIST;
     _cp $_, $tmp
@@ -373,16 +371,18 @@ sub build_exe {
     
     _msg 1, "Compiling...";
     for (@srcs) {
-        my $c = $tmp->file("$_.c");
-        my $o = $tmp->file("$_$Config{_o}");
+        my $c = "$_.c";
+        my $o = "$_$Config{_o}";
         push @objs, $o;
-        _mysystem qq!$Config{cc} -c $ccopts -o "$o" "$c"!
+        _mysystem qq!$Config{cc} -c $ccopts -o $o $c!
     }
 
     _msg 1, "Linking...";
-    local $" = qq/" "/;
+    local $" = qq/ /;
     _mysystem 
-        qq!$Config{ld} -o "$exe"  "@objs" $ldopts!;
+        qq!$Config{ld} $P2EConfig{ldout}"$exe" @objs $ldopts!;
+
+    chdir $oldcwd;
 
     open my $OUT, "+<:raw", $exe
         or die "can't append to '$exe': $!\n";

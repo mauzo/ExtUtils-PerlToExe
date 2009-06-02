@@ -116,8 +116,10 @@ pl2exe_perl_parse(
 )
 {
 #ifdef USE_MY_ARGV
-    int   my_argc;
-    char *my_argv[ARGC + argc];
+    int    my_argc;
+    char **my_argv;
+
+    Newx(my_argv, argc + ARGC, char *);
 
     my_argv[0] = argv[0];
     INIT_MY_ARGV;

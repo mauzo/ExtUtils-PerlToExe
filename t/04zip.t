@@ -33,6 +33,9 @@ run_is $exe, ["", ""],              "included zipfile";
 
 unlink $exe;
 
+BAIL_OUT "can't include a zipfile"
+    if grep !$_, Test::More->builder->summary;
+
 BEGIN { $t += 3 }
 
 build_ok {
