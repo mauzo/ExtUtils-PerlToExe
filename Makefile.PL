@@ -231,34 +231,36 @@ TRY
 }
 
 {
+    open my $MAIN, ">", \(my $perlmain = "");
+    my $OLD = select $MAIN;
+    writemain;
+    select $OLD;
+
+    my ($xsinit) = $perlmain =~ m!( \n[^\n]+\n xs_init\( .*\n \} )!msx;
+    
     try <<TRY;
 $perl_h
 
-static const char *
-xsinit(pTHX)
-{
-    PERL_UNUSED_CONTEXT;
-    const char file[] = __FILE__;
-    return file;
-}
+$xsinit
 
 int
 main(int argc, char **argv)
 {
     PerlInterpreter *my_perl;
-    (void)xsinit(aTHX);
+    (void)xs_init(aTHX);
     return 0;
 }
 TRY
 
-    check "if your compiler can cope with PERL_UNUSED_CONTEXT", 
+    check "if your compiler can cope with xs_init", 
         ["try"], []
         and last;
 
-    check "if #defining it out helps", ["try"], [], "NEED_NO_PUC"
+    check "if #defining PERL_UNUSED_CONTEXT out helps", 
+        ["try"], [], "NEED_NO_PUC"
         and last;
 
-    die "I can't make your compiler accept PERL_UNUSED_CONTEXT.\n";
+    die "I can't make your compiler compile xs_init.\n";
 }
 
 check "if your EU::Miniperl works", 
