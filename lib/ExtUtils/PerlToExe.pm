@@ -300,7 +300,7 @@ sub build_exe {
 
     _msg 3, "Building an exe with " . dump \%opts;
 
-    my $tmp = dir tempdir CLEANUP => ! !$ENV{PL2EXE_NO_CLEANUP};
+    my $tmp = dir tempdir CLEANUP => !$ENV{PL2EXE_NO_CLEANUP};
     _msg 3, "Using tempdir $tmp";
 
     my $ccopts = $P2EConfig{ccopts};
@@ -314,7 +314,9 @@ sub build_exe {
             $zip->addTree($opts{zip}, "");
 
             if ($opts{script}) {
-                $zip->addFile($opts{script}, "script.pl");
+                my $m;
+                $m = $zip->addFile($opts{script}, "script.pl")
+                    and $m->isBinaryFile(1);
                 push @{$opts{perl}}, devnull;
             }
         }
@@ -349,10 +351,11 @@ sub build_exe {
         argv    => [@{$opts{perl}}, @{$opts{argv}}],
         script  => $opts{script};
 
-    _msg 3, "Writing subst.h with \n" . define %subst;
+    my $subst = define %subst;
+    _msg 3, "Writing subst.h with", $subst;
 
     write_file "exemain.c",     exemain;
-    write_file "subst.h",       define %subst;
+    write_file "subst.h",       $subst;
     write_file "p2econfig.h",   define %{$P2EConfig{define}};
 
     my @srcs = (

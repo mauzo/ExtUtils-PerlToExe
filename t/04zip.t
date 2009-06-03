@@ -9,6 +9,7 @@ use Config;
 
 use Archive::Zip    qw/:ERROR_CODES/;
 use Path::Class     qw/file dir/;
+use File::Slurp     qw/read_file/;
 
 my $_exe = ($Config{_exe} || ".out");
 
@@ -49,7 +50,7 @@ ok +Archive::Zip->new($exe),        "...is a zipfile";
 
 unlink $exe;
 
-BEGIN { $t += 6 * 5 }
+BEGIN { $t += 2 * 5 }
 
 exe_is {
     perl    => ["-eprint \$INC[0]->isa('ExtUtils::PerlToExe::INC')"],
@@ -61,6 +62,8 @@ exe_is {
     perl    => ["-eprint \$INC[0]->name"],
     zip     => "t",
 }, [$exe, ""],                      "...with correct zipfile";
+
+BEGIN { $t += 2 * 5 }
 
 exe_is {
     perl    => ["-MScalar::Util=openhandle", <<'PERL'],
@@ -77,19 +80,22 @@ PERL
     zip     => "t",
 }, ["1", ""],                       "...in the correct class";
 
-my $perl = do {
-    local $/;
-    open my $P, "<", dir("t")->file("layers");
-    <$P>;
-};
+BEGIN { $t += 2 * 5 }
 
-exe_is {
-    perl    => [<<'PERL'],
--elocal $/; 
-print readline $INC[0]->INC("layers");
+for (qw/crlf nocrlf/) {
+    my $file = read_file "".dir("t")->file($_), binmode => 1;
+
+    exe_is {
+        perl    => [<<PERL],
+-elocal \$/; 
+binmode STDOUT;
+print readline \$INC[0]->INC("$_");
 PERL
-    zip     => "t",
-}, [$perl, ""],                     "...with the correct contents";
+        zip     => "t",
+    }, [$file, ""],                 "...with the correct contents ($_)";
+}
+
+BEGIN { $t += 5 }
 
 exe_is {
     perl    => ["-MDummy", "-eprint \$Dummy::Dummy"],

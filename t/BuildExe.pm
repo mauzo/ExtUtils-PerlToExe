@@ -95,9 +95,23 @@ sub run_is {
 
     dotodo $opts->{todo}{exit};
     $B->is_num($rv, $opts->{exit}, "$name: correct exit code");
+
     dotodo $opts->{todo}{stdout};
+    unless (ref $opts->{stdout}) {
+        $gotout =~ /\r/ and $opts->{stdout} !~ /\r/
+            and $B->diag("STDOUT has (possibly) spurious CRs");
+        $gotout !~ /\r/ and $opts->{stdout} =~ /\r/
+            and $B->diag("Expected STDOUT has (possibly) spurious CRs");
+    }
     $B->is_or_like($gotout, $opts->{stdout}, "$name: correct STDOUT");
+    
     dotodo $opts->{todo}{stderr};
+    unless (ref $opts->{stderr}) {
+        $goterr =~ /\r/ and $opts->{stderr} !~ /\r/
+            and $B->diag("STDERR has (possibly) spurious CRs");
+        $goterr !~ /\r/ and  $opts->{stderr} =~ /\r/
+            and $B->diag("Expected STDERR has (possibly) spurious CRs");
+    }
     $B->is_or_like($goterr, $opts->{stderr}, "$name: correct STDERR");
     dotodo;
 }

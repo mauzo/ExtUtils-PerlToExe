@@ -23,8 +23,10 @@ t/02pl2exe.t
 t/03build.t
 t/04zip.t
 t/BuildExe.pm
+t/crlf
 t/ctrlX
 t/Dummy.pm
 t/layers
+t/nocrlf
 t/null
 TODO
