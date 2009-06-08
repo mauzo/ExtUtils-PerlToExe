@@ -72,12 +72,17 @@ Returns the text of F<perlmain.c>, from L<ExtUtils::Miniperl>.
 =cut
 
 sub perlmain {
+    my @ext = @_;
+
     open my $MAIN, ">", \(my $C = "");
     my $OLD = select $MAIN;
 
     # Ugh. At least it's a global...
     local %ExtUtils::Miniperl::SEEN;
-    my @ext = ExtUtils::Embed::static_ext;
+    @ext = 
+        grep !m!XS/APItest|XS/Typemap!,
+        ExtUtils::Embed::static_ext,
+        @ext;
     ExtUtils::Miniperl::writemain @ext;
 
     select $OLD;
@@ -122,7 +127,7 @@ sub str_to_C (_) {
 }
 
 sub exemain {
-    my $C = perlmain;
+    my $C = perlmain @_;
     $C =~ s{#include "perl.h"\n\K}{<<C}e;
 #include "pl2exe.h"
 C
@@ -268,6 +273,11 @@ my %Srcs = (
     USE_ZIP                 => ["zip"],
 );
 
+my %Ext = (
+    USE_SUBFILE     => ["PerlIO::subfile"],
+    USE_ZIP         => ["PerlIO::gzip"],
+);
+
 # arguments must be Path::Class objects
 
 sub _cp {
@@ -289,6 +299,8 @@ sub build_exe {
     }
     $opts{perl} =   [@{$opts{perl} || []}];
     $opts{argv} =   [@{$opts{argv} || []}];
+
+    $opts{ext} ||= [];
 
     ref $opts{script} eq "ARRAY"
         and $opts{script} = file @{$opts{script}};
@@ -352,11 +364,6 @@ sub build_exe {
         script  => $opts{script};
 
     my $subst = define %subst;
-    _msg 3, "Writing subst.h with", $subst;
-
-    write_file "exemain.c",     exemain;
-    write_file "subst.h",       $subst;
-    write_file "p2econfig.h",   define %{$P2EConfig{define}};
 
     my @srcs = (
         @{$P2EConfig{srcs}},
@@ -364,6 +371,19 @@ sub build_exe {
             grep $subst{$_},
             keys %Srcs,
     );
+
+    my @ext = (
+        @{$opts{ext}},
+        map @{$Ext{$_}},
+            grep $subst{$_},
+            keys %Ext,
+    );
+
+    _msg 3, "Writing exemain.c with @ext.";
+    write_file "exemain.c",     exemain @ext;
+    _msg 3, "Writing subst.h with", $subst;
+    write_file "subst.h",       $subst;
+    write_file "p2econfig.h",   define %{$P2EConfig{define}};
 
     my $dist = dir dist_dir $DIST;
     _cp $_, $tmp
@@ -381,9 +401,35 @@ sub build_exe {
     }
 
     _msg 1, "Linking...";
-    local $" = qq/ /;
+
+    my (@libs, @extrald);
+    EXT: for my $ext (@ext) {
+        _msg 3, "looking for $ext...";
+        my @ns    = split /::/, $ext;
+
+        DIR: for my $inc (@INC) {
+
+            my $dir = dir $inc, "auto", @ns;
+            my $lib = $dir->file("$ns[-1]$Config{_a}");
+            _msg 3, "trying $lib...";
+
+            -e $lib or next DIR;
+            push @libs, $lib;
+            _msg 3, "OK.";
+
+            my $extra = $dir->file("extralibs.ld");
+            -e $extra or next EXT;
+
+            my @extra = grep length, split /\s+/, read_file "".$extra;
+            push @extrald, @extra;
+            @extra and _msg 3, "got @extra from $extra.";
+
+            next EXT;
+        }
+    }
+
     _mysystem 
-        qq!$Config{ld} $P2EConfig{ldout}"$exe" @objs $ldopts!;
+        qq!$Config{ld} $P2EConfig{ldout}"$exe" @objs @libs $ldopts @extrald!;
 
     chdir $oldcwd;
 

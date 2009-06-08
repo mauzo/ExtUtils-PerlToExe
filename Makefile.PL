@@ -74,7 +74,11 @@ sub cp { write_file $_[1], read_file $_[0] }
 {
     open my $MAIN, ">", \(my $perlmain = "");
     my $OLD = select $MAIN;
-    writemain ExtUtils::Embed::static_ext;
+    my @ext = 
+        grep !m!XS/APItest|XS/Typemap!, 
+        ExtUtils::Embed::static_ext;
+    warn "Writing perlmain with @ext\n";
+    writemain @ext;
     select $OLD;
     $perlmain =~ s[(#include "perl.h"\n)][$1#include "pl2exe.h"\n];
     write_file config("exemain.c"), $perlmain;
