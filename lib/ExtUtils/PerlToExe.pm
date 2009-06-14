@@ -34,7 +34,7 @@ use ExtUtils::Embed     ();
 
 use Fcntl               qw/:seek/;
 
-use Cwd                 qw/cwd/;
+use File::chdir         qw/$CWD/;
 use Path::Class         qw/dir file/;
 use File::Spec::Functions   qw/devnull curdir/;
 use File::Temp          qw/tempdir/;
@@ -42,6 +42,7 @@ use File::Copy          qw/cp/;
 use File::Slurp         qw/read_file write_file read_dir/;
 use File::ShareDir      qw/dist_dir dist_file/;
 
+use Scalar::Util        qw/blessed openhandle/;
 use List::Util          qw/max/;
 use Data::Alias;
 use Data::Dump qw/dump/;
@@ -61,6 +62,42 @@ our $Verb = 0;
 sub _msg {
     my ($v, $msg) = @_;
     $Verb >= $v and warn "$msg\n";
+}
+
+sub _str { 
+    my $_ = $_[0];
+    return m{[^\w./-]} ? qq{"\Q$_[0]\E"} : "$_";
+}
+
+sub _ddump {
+    my ($data, $indent) = @_;
+    $indent ||= 0;
+
+    openhandle $data        and return "<FH>";
+    blessed $data           and return _str $data;
+    ref $data eq "HASH"     and return
+        "{\n" . 
+        join("", map
+            +("  " x ($indent + 1)) .
+                _str($_) . 
+                " => " . 
+                _ddump($data->{$_}, $indent + 1) .
+                ",\n",
+            keys %$data,
+        ) .
+        ("  " x $indent) .
+        "}";
+    ref $data eq "ARRAY"    and return
+        "[\n" . 
+        join("", map
+            +("  " x ($indent + 1)) .
+                _ddump($_, $indent + 1) .
+                ",\n",
+            @$data,
+        ) .
+        ("  " x $indent) .
+        "]";
+    return _str $data;
 }
 
 =begin internals
@@ -159,7 +196,7 @@ added to C<perl_parse>'s C<argv>, after a C<-->.
 sub subst_h {
     my %opts = @_;
 
-    _msg 3, "Writing subst.h with " . dump \%opts;
+    _msg 3, "Writing subst.h with " . _ddump \%opts;
 
     alias my @argv = @{$opts{argv}};
 
@@ -289,7 +326,40 @@ sub _cp {
     File::Copy::cp "$from", "$to";
 }
 
-sub build_exe {
+sub _static_ext {
+    my @ext = @_;
+    my (@static, @libs, @extrald);
+
+    EXT: for my $ext (@ext) {
+        _msg 3, "looking for $ext...";
+        my @ns    = split /::/, $ext;
+
+        DIR: for my $inc (@INC) {
+
+            my $dir = dir $inc, "auto", @ns;
+            my $lib = $dir->file("$ns[-1]$Config{_a}");
+            _msg 3, "trying $lib...";
+
+            -e $lib or next DIR;
+            push @libs, $lib;
+            push @static, $ext;
+            _msg 3, "OK.";
+
+            my $extra = $dir->file("extralibs.ld");
+            -e $extra or next EXT;
+
+            my @extra = grep length, split /\s+/, read_file "".$extra;
+            push @extrald, @extra;
+            @extra and _msg 3, "got @extra from $extra.";
+
+            next EXT;
+        }
+    }
+
+    return \(@static, @libs, @extrald);
+}
+
+sub _fixup_opts {
     my %opts = @_;
 
     unless ($opts{type}) {
@@ -305,30 +375,23 @@ sub build_exe {
     ref $opts{script} eq "ARRAY"
         and $opts{script} = file @{$opts{script}};
 
-    my $exe = $opts{output} // "a" . $P2EConfig{_exe};
-    $exe = file($exe)->absolute;
+    $opts{output} //= "a" . $P2EConfig{_exe};
+    $opts{output} = file($opts{output})->absolute;
 
     $Verb = $ENV{PL2EXE_VERBOSE} || $opts{verbose} || 0;
 
-    _msg 3, "Building an exe with " . dump \%opts;
+    $opts{TMP} = dir tempdir CLEANUP => !$ENV{PL2EXE_NO_CLEANUP};
 
-    my $tmp = dir tempdir CLEANUP => !$ENV{PL2EXE_NO_CLEANUP};
-    _msg 3, "Using tempdir $tmp";
-
-    my $ccopts = $P2EConfig{ccopts};
-    my $ldopts = $P2EConfig{ldopts};
-
-    my ($SCRP, $offset, $zip);
+    _msg 3, "Building an exe with " . _ddump \%opts;
 
     given ($opts{type}) {
         when ("zip") {
-            $zip = Archive::Zip->new;
-            $zip->addTree($opts{zip}, "");
+            $opts{ZIP} = Archive::Zip->new;
+            $opts{ZIP}->addTree($opts{zip}, "");
 
             if ($opts{script}) {
                 my $m;
-                $m = $zip->addFile($opts{script}, "script.pl")
-                    and $m->isBinaryFile(1);
+                $m = $opts{ZIP}->addFile($opts{script}, "script.pl");
                 push @{$opts{perl}}, devnull;
             }
         }
@@ -340,8 +403,8 @@ sub build_exe {
             my $script = $opts{script};
             push @{$opts{perl}}, devnull;
 
-            open $SCRP, "<", $script or die "can't read '$script'\n";
-            $offset = -s $SCRP
+            open $opts{SCRIPT}, "<", $script or die "can't read '$script'\n";
+            $opts{offset} = -s $opts{SCRIPT}
                 or die "script file '$script' is empty\n";
         }
         when ("path") {
@@ -352,87 +415,13 @@ sub build_exe {
         }
     }
 
-    _msg 1, "Generating source...";
+    return %opts;
+}
 
-    my $oldcwd = cwd;
-    chdir $tmp;
-
-    my %subst = subst_h
-        type    => $opts{type},
-        offset  => $offset,
-        argv    => [@{$opts{perl}}, @{$opts{argv}}],
-        script  => $opts{script};
-
-    my $subst = define %subst;
-
-    my @srcs = (
-        @{$P2EConfig{srcs}},
-        map @{$Srcs{$_}},
-            grep $subst{$_},
-            keys %Srcs,
-    );
-
-    my @ext = (
-        @{$opts{ext}},
-        map @{$Ext{$_}},
-            grep $subst{$_},
-            keys %Ext,
-    );
-
-    _msg 3, "Writing exemain.c with @ext.";
-    write_file "exemain.c",     exemain @ext;
-    _msg 3, "Writing subst.h with", $subst;
-    write_file "subst.h",       $subst;
-    write_file "p2econfig.h",   define %{$P2EConfig{define}};
-
-    my $dist = dir dist_dir $DIST;
-    _cp $_, $tmp
-        for (grep -f, map $dist->file("$_.c"), @srcs),
-            (grep /\.h$/, $dist->children);
-
-    my @objs;
+sub _fixup_exe {
+    my %opts = @_;
+    my $exe = $opts{output};
     
-    _msg 1, "Compiling...";
-    for (@srcs) {
-        my $c = "$_.c";
-        my $o = "$_$Config{_o}";
-        push @objs, $o;
-        _mysystem qq!$Config{cc} -c $ccopts -o $o $c!
-    }
-
-    _msg 1, "Linking...";
-
-    my (@libs, @extrald);
-    EXT: for my $ext (@ext) {
-        _msg 3, "looking for $ext...";
-        my @ns    = split /::/, $ext;
-
-        DIR: for my $inc (@INC) {
-
-            my $dir = dir $inc, "auto", @ns;
-            my $lib = $dir->file("$ns[-1]$Config{_a}");
-            _msg 3, "trying $lib...";
-
-            -e $lib or next DIR;
-            push @libs, $lib;
-            _msg 3, "OK.";
-
-            my $extra = $dir->file("extralibs.ld");
-            -e $extra or next EXT;
-
-            my @extra = grep length, split /\s+/, read_file "".$extra;
-            push @extrald, @extra;
-            @extra and _msg 3, "got @extra from $extra.";
-
-            next EXT;
-        }
-    }
-
-    _mysystem 
-        qq!$Config{ld} $P2EConfig{ldout}"$exe" @objs @libs $ldopts @extrald!;
-
-    chdir $oldcwd;
-
     open my $OUT, "+<:raw", $exe
         or die "can't append to '$exe': $!\n";
     seek $OUT, 0, SEEK_END
@@ -443,25 +432,88 @@ sub build_exe {
             _msg 1, "Appending script...";
             _msg 2, qq/cat "$opts{script}" >> "$exe"/;
 
-            cp $SCRP, $OUT;
+            cp $opts{SCRIPT}, $OUT;
         }
         when ("zip") {
             _msg 1, "Appending zipfile...";
             _msg 2, qq/zip -r - "$opts{zip}" >> "$exe"/;
 
-            for ($zip->members) {
+            for ($opts{ZIP}->members) {
                 _msg 3, sprintf "path: %s, file: %s",
                     $_->fileName, $_->externalFileName;
             }
 
-            $zip->writeToFileHandle($OUT, 1) == AZ_OK
+            $opts{ZIP}->writeToFileHandle($OUT, 1) == AZ_OK
                 or die "writing zipfile failedi\n";
         }
     }
 
     close $OUT;
     chmod 0755, $exe;
+}
 
+sub build_exe {
+    my %opts = _fixup_opts @_;
+
+    my $ccopts = $P2EConfig{ccopts};
+    my $ldopts = $P2EConfig{ldopts};
+
+    _msg 1, "Generating source...";
+
+    {
+        local $CWD = $opts{TMP};
+
+        unshift @{$opts{argv}}, @{delete $opts{perl}};
+
+        my %subst = subst_h %opts;
+        my $subst = define %subst;
+
+        my @srcs = (
+            @{$P2EConfig{srcs}},
+            map @{$Srcs{$_}},
+                grep $subst{$_},
+                keys %Srcs,
+        );
+
+        my @ext = (
+            @{$opts{ext}},
+            map @{$Ext{$_}},
+                grep $subst{$_},
+                keys %Ext,
+        );
+
+        my ($static, $libs, $extrald) = _static_ext @ext;
+
+        _msg 3, "Writing exemain.c with @$static.";
+        write_file "exemain.c",     exemain @$static;
+        _msg 3, "Writing subst.h with", $subst;
+        write_file "subst.h",       $subst;
+        write_file "p2econfig.h",   define %{$P2EConfig{define}};
+
+        my $dist = dir dist_dir $DIST;
+        _cp $_, $opts{TMP}
+            for (grep -f, map $dist->file("$_.c"), @srcs),
+                (grep /\.h$/, $dist->children);
+
+        my @objs;
+        
+        _msg 1, "Compiling...";
+        for (@srcs) {
+            my $c = "$_.c";
+            my $o = "$_$Config{_o}";
+            push @objs, $o;
+            _mysystem qq!$Config{cc} -c $ccopts -o $o $c!
+        }
+
+        _msg 1, "Linking...";
+
+        my $ldout = $P2EConfig{ldout} . qq/"$opts{output}"/;
+        _mysystem 
+            "$Config{ld} $ldout @objs @$libs $ldopts @$extrald";
+    }
+
+    _fixup_exe %opts;
+    
     return 1;
 }
 

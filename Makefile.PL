@@ -20,6 +20,7 @@ requires    "Exporter::NoWork"      => "0.02";
 requires    "List::Util"            => 0;
 requires    "File::Temp"            => 0;
 requires    "File::Slurp"           => "9999.09";
+requires    "File::chdir"           => "0.08";
 requires    "IPC::System::Simple"   => 0;
 requires    "File::Copy"            => 0;
 requires    "File::Spec"            => 0;
