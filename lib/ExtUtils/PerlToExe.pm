@@ -326,18 +326,25 @@ sub _cp {
     File::Copy::cp "$from", "$to";
 }
 
+sub _auto {
+    my ($ns) = @_;
+    my @ns = split /::/, $ns;
+
+    my $auto = dir "auto", @ns;
+    return wantarray ? ($auto, $ns[-1]) : $auto;
+}
+
 sub _static_ext {
     my @ext = @_;
     my (@static, @libs, @extrald);
 
     EXT: for my $ext (@ext) {
         _msg 3, "looking for $ext...";
-        my @ns    = split /::/, $ext;
+        my ($auto, $bname) = _auto $ext;
 
-        DIR: for my $inc (@INC) {
+        DIR: for my $inc (map dir($_, $auto), @INC) {
 
-            my $dir = dir $inc, "auto", @ns;
-            my $lib = $dir->file("$ns[-1]$Config{_a}");
+            my $lib = $inc->file("$bname$Config{_a}");
             _msg 3, "trying $lib...";
 
             -e $lib or next DIR;
@@ -345,7 +352,7 @@ sub _static_ext {
             push @static, $ext;
             _msg 3, "OK.";
 
-            my $extra = $dir->file("extralibs.ld");
+            my $extra = $inc->file("extralibs.ld");
             -e $extra or next EXT;
 
             my @extra = grep length, split /\s+/, read_file "".$extra;
